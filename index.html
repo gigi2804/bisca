@@ -283,7 +283,7 @@
         
         socket.on('trickResult', m => { 
             const el = document.getElementById('status-msg'); el.innerHTML=m; el.style.color='gold'; el.style.borderColor='gold';
-            setTimeout(()=> { el.style.color='#eee'; el.style.borderColor='#d4af37'; }, 2000); 
+            setTimeout(()=> { el.style.color='#eee'; el.style.borderColor='#d4af37'; }, 5000); 
         });
         socket.on('gameOver', m => { alert(m); });
 
