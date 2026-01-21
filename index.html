@@ -11,10 +11,8 @@
             :root { --card-width: 42px; --card-height: 68px; --avatar-size: 34px; } 
         }
 
-        /* --- FIX ALTEZZA DINAMICA (DVH) --- */
         body { 
             font-family: 'Segoe UI', sans-serif; background: #111; color: white; margin: 0; 
-            /* Usa 100dvh per adattarsi alle barre del browser mobile, fallback a 100vh */
             height: 100vh; height: 100dvh; 
             width: 100%; overflow: hidden; 
             display: flex; user-select: none; -webkit-user-select: none; touch-action: manipulation; 
@@ -36,16 +34,8 @@
         @media (max-width: 768px) { 
             #app-wrapper { flex-direction: column; } 
             
-            #game-area { 
-                height: 55%; /* Riduco leggermente il gioco per dare spazio alla chat */
-                width: 100%;
-            }
-            
-            #chat-sidebar { 
-                width: 100%; 
-                height: 45%; /* Chat più alta */
-                border-left: none; border-top: 2px solid #d4af37; 
-            } 
+            #game-area { height: 55%; width: 100%; }
+            #chat-sidebar { width: 100%; height: 45%; border-left: none; border-top: 2px solid #d4af37; } 
             
             .player-info { padding: 1px 3px !important; font-size: 9px !important; } 
         }
@@ -53,12 +43,9 @@
         #chat-header { padding: 5px; background: #d4af37; color: black; font-weight: bold; text-align: center; font-size: 12px; flex-shrink: 0;}
         #chat-messages { flex-grow: 1; overflow-y: auto; padding: 10px; font-size: 13px; display: flex; flex-direction: column; gap: 6px; background: #111;}
         
-        /* --- FIX INPUT AREA --- */
         #chat-input-area { 
             padding: 8px; background: #222; display: flex; gap: 5px; 
-            flex-shrink: 0; 
-            /* Aggiunge spazio sotto per iPhone X/11/12/13 ecc */
-            padding-bottom: max(8px, env(safe-area-inset-bottom)); 
+            flex-shrink: 0; padding-bottom: max(8px, env(safe-area-inset-bottom)); 
         }
         
         #chat-input { flex-grow: 1; padding: 10px; border: 1px solid #555; background: #333; color: white; border-radius: 4px; outline:none; font-size: 16px; }
@@ -69,13 +56,11 @@
         .msg-other { background: #444; align-self: flex-start; border-bottom-left-radius: 0; }
         .msg-name { font-size: 10px; color: #aaa; margin-bottom: 2px; font-weight: bold; }
 
-        /* Login & Lobby */
         #login, #lobby { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(16, 16, 16, 0.98); padding: 30px; border: 2px solid #d4af37; z-index: 2000; text-align: center; border-radius: 15px; width: 85%; max-width: 320px; box-shadow: 0 0 50px rgba(0,0,0,0.8); }
         input, select { padding: 12px; width: 90%; margin-bottom: 15px; text-align: center; background: #222; color: white; border: 1px solid #555; border-radius: 5px; font-size: 16px;}
         button { padding: 12px; cursor: pointer; background: #d4af37; border: none; font-weight: bold; width: 100%; border-radius: 5px; font-size: 16px; text-transform: uppercase; color: #000; transition: 0.2s;}
         button:active { transform: scale(0.98); }
         
-        /* Game Elements */
         #felt { position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%); width: 94%; height: 65%; border: 6px solid #3d2b1f; background: #0d5226; border-radius: 80px; box-shadow: inset 0 0 50px rgba(0,0,0,0.7); }
         .player-seat { position: absolute; width: 90px; height: 80px; transform: translate(-50%, -50%); text-align: center; font-size: 12px; transition: 0.5s; z-index: 10; display: flex; flex-direction: column; align-items: center;}
         .avatar { width: var(--avatar-size); height: var(--avatar-size); background: #222; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid #666; font-size: 14px; font-weight: bold; box-shadow: 0 3px 6px rgba(0,0,0,0.5);}
@@ -129,7 +114,7 @@
             <div id="chat-header">CHAT</div>
             <div id="chat-messages"></div>
             <div id="chat-input-area">
-                <input type="text" id="chat-input" placeholder="Messaggio..." autocomplete="off">
+                <input type="text" id="chat-input" placeholder="Scrivi..." autocomplete="off">
                 <button id="chat-send" onclick="sendChat()">➤</button>
             </div>
         </div>
@@ -283,7 +268,9 @@
         }
 
         socket.on('updateHand', h => {
-            if(isBlindModeActive) return; 
+            // FIX: Se la mano è vuota (carta giocata), aggiornala anche se in cieca!
+            if(isBlindModeActive && h.length > 0) return; 
+            
             switchToGameView();
             const div = document.getElementById('my-hand'); div.innerHTML='';
             h.forEach((c, i) => div.appendChild(renderCard(c, true, i)));
