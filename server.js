@@ -41,8 +41,9 @@ function getCardPower(c, isAssoHigh) {
   return p + c.value;
 }
 function getNextAliveIndex(curr, players) {
-    let next = (curr + 1) % players.length, loop = 0;
-    while (players[next].lives <= 0 && loop < players.length) { next = (next + 1) % players.length; loop++; }
+    let next = (curr + 1) % players.length;
+    let loopCount = 0;
+    while (players[next].lives <= 0 && loopCount < players.length) { next = (next + 1) % players.length; loop++; }
     return next;
 }
 
@@ -74,6 +75,7 @@ io.on('connection', (socket) => {
       if (!rooms[sanitizedRoom]) rooms[sanitizedRoom] = createRoomState();
       const room = rooms[sanitizedRoom];
 
+      // 1. CONTROLLO RICONESSIONE (Priorità assoluta: se esiste già, fallo entrare)
       const ex = room.players.find(p => p.name === name);
       if (ex) {
           ex.id = socket.id; 
@@ -81,7 +83,16 @@ io.on('connection', (socket) => {
           if (room.roundCardsCount === 1 && room.gameSettings.blindMode && room.gameState !== 'LOBBY') socket.emit('blindRoundInfo', room.players.map(p => ({id: p.id, card: (p.lives > 0 && p.hand.length > 0) ? p.hand[0] : null})));
           return;
       }
+
+      // 2. CONTROLLO PARTITA INIZIATA
       if (room.gameState !== "LOBBY") return socket.emit('errorMsg', 'Partita iniziata!');
+
+      // 3. NUOVO CONTROLLO: MASSIMO 8 GIOCATORI
+      if (room.players.length >= 8) {
+          return socket.emit('errorMsg', 'Tavolo Pieno! Massimo 8 giocatori.');
+      }
+
+      // 4. AGGIUNGI NUOVO GIOCATORE
       if (!room.players.find(p => p.id === socket.id)) room.players.push({ id: socket.id, name, lives: 5, hand: [], bid: null, tricksWon: 0 });
       broadcastUpdate(sanitizedRoom);
   });
@@ -153,18 +164,27 @@ function evaluateTrick(roomName) {
     let winner = room.tableCards[0], maxP = getCardPower(winner.card, winner.isAssoHigh);
     for (let i = 1; i < room.tableCards.length; i++) { let p = getCardPower(room.tableCards[i].card, room.tableCards[i].isAssoHigh); if (p > maxP) { winner = room.tableCards[i]; maxP = p; } }
     const wPlayer = room.players.find(p => p.id === winner.playerId); wPlayer.tricksWon++; 
-    io.to(roomName).emit('trickResult', `Presa: ${wPlayer.name}`); broadcastUpdate(roomName);
     
-    // --- TIMER AGGIORNATI ---
-    // 8 Secondi (8000ms) se siamo al turno da 1 carta
-    // 3.5 Secondi (3500ms) per i turni normali
-    const waitTime = (room.roundCardsCount === 1) ? 8000 : 3500;
+    io.to(roomName).emit('trickResult', `Presa: ${wPlayer.name}`); 
+    broadcastUpdate(roomName);
+    
+    // TIMER LUNGHI: 10s per Cieca, 4s per Normale
+    const waitTime = (room.roundCardsCount === 1) ? 10000 : 4000;
 
     setTimeout(() => {
         if(!rooms[roomName]) return;
-        room.tableCards = []; io.to(roomName).emit('tableUpdate', []); io.to(roomName).emit('clearBlindCards'); 
+        room.tableCards = []; 
+        io.to(roomName).emit('tableUpdate', []); 
+        io.to(roomName).emit('clearBlindCards'); 
+        
         room.currentPlayerIndex = room.players.findIndex(p => p.id === winner.playerId);
-        if (room.players[room.currentPlayerIndex].hand.length === 0) endRoundLogic(roomName); else { room.isProcessing = false; updateGameState(roomName, "PLAYING"); }
+        
+        if (room.players[room.currentPlayerIndex].hand.length === 0) {
+            endRoundLogic(roomName); 
+        } else { 
+            room.isProcessing = false; 
+            updateGameState(roomName, "PLAYING"); 
+        }
     }, waitTime); 
 }
 
