@@ -13,9 +13,11 @@ app.use('/carte', express.static(path.join(__dirname, 'carte')));
 
 app.get('/', (req, res) => { res.sendFile(__dirname + '/index.html'); });
 
-// --- GESTIONE STANZE ---
 const rooms = {}; 
 const SUITS = ['denari', 'coppe', 'spade', 'bastoni'];
+
+// LOG DI DEBUG
+console.log("SERVER AVVIATO: MODALITÀ SUSPENSE (Punti dopo timer)");
 
 function createRoomState() {
     return {
@@ -173,31 +175,34 @@ function evaluateTrick(roomName) {
     let winner = room.tableCards[0], maxP = getCardPower(winner.card, winner.isAssoHigh);
     for (let i = 1; i < room.tableCards.length; i++) { let p = getCardPower(room.tableCards[i].card, room.tableCards[i].isAssoHigh); if (p > maxP) { winner = room.tableCards[i]; maxP = p; } }
     
-    let wPlayer = room.players.find(p => p.id === winner.playerId);
-    if(wPlayer) wPlayer.tricksWon++; 
-    
-    io.to(roomName).emit('trickResult', wPlayer ? `Presa: ${wPlayer.name}` : `Presa: (Uscito)`); 
-    
-    // Aggiorniamo le info dei giocatori (punteggio), il client ridisegnerà le sedie
-    // MA GRAZIE AL FIX NEL CLIENT, LE CARTE NON SPARIRANNO
-    broadcastUpdate(roomName);
-    
-    // TIMER FISSO 4 SECONDI
-    const waitTime = 4000;
+    // Trova il vincitore ma NON ASSEGNARE ANCORA I PUNTI
+    // Se aggiornassimo ora, il client ridisegnerebbe il tavolo cancellando le carte.
+    let wPlayerId = winner.playerId;
+    let winnerName = room.players.find(p => p.id === wPlayerId)?.name || "Sconosciuto";
 
-    console.log(`[${roomName}] Fine Mano. Attendo ${waitTime}ms.`);
+    io.to(roomName).emit('trickResult', `Presa: ${winnerName}`); 
+    
+    // --- TIMER DI ATTESA ---
+    const waitTime = (room.roundCardsCount === 1) ? 8000 : 4000;
 
     setTimeout(() => {
         try {
             if(!rooms[roomName]) return;
             const r = rooms[roomName]; 
             
-            // ORA PULIAMO
+            // 1. ASSEGNAZIONE PUNTI (Dopo il timer!)
+            let wp = r.players.find(p => p.id === wPlayerId);
+            if(wp) wp.tricksWon++;
+
+            // 2. AGGIORNAMENTO GRAFICA (Ora il tavolo si ridisegnerà con i nuovi punti)
+            broadcastUpdate(roomName);
+
+            // 3. PULIZIA
             r.tableCards = []; 
             io.to(roomName).emit('tableUpdate', []); 
             io.to(roomName).emit('clearBlindCards'); 
             
-            let nextIdx = r.players.findIndex(p => p.id === winner.playerId);
+            let nextIdx = r.players.findIndex(p => p.id === wPlayerId);
             if (nextIdx === -1) nextIdx = getNextAliveIndex(0, r.players);
             
             r.currentPlayerIndex = nextIdx;
