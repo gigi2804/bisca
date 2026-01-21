@@ -146,6 +146,7 @@ function nextTurn(roomName, phase) {
   if (phase === 'BIDDING') { room.currentPlayerIndex = getNextAliveIndex(room.currentPlayerIndex, room.players); if (room.currentPlayerIndex === room.firstPlayerIndex) { updateGameState(roomName, "PLAYING"); return; } updateGameState(roomName, "BIDDING"); } 
   else { if (room.tableCards.length === room.players.filter(p => p.lives > 0).length) evaluateTrick(roomName); else { room.currentPlayerIndex = getNextAliveIndex(room.currentPlayerIndex, room.players); updateGameState(roomName, "PLAYING"); } }
 }
+
 function evaluateTrick(roomName) {
     const room = rooms[roomName];
     room.isProcessing = true;
@@ -154,9 +155,10 @@ function evaluateTrick(roomName) {
     const wPlayer = room.players.find(p => p.id === winner.playerId); wPlayer.tricksWon++; 
     io.to(roomName).emit('trickResult', `Presa: ${wPlayer.name}`); broadcastUpdate(roomName);
     
-    // --- MODIFICA TEMPO DI ATTESA ---
-    // 5 SECONDI per il turno da 1 carta, 2.5s per gli altri
-    const waitTime = (room.roundCardsCount === 1) ? 5000 : 2500;
+    // --- TIMER AGGIORNATI ---
+    // 8 Secondi (8000ms) se siamo al turno da 1 carta
+    // 3.5 Secondi (3500ms) per i turni normali
+    const waitTime = (room.roundCardsCount === 1) ? 8000 : 3500;
 
     setTimeout(() => {
         if(!rooms[roomName]) return;
@@ -165,6 +167,7 @@ function evaluateTrick(roomName) {
         if (room.players[room.currentPlayerIndex].hand.length === 0) endRoundLogic(roomName); else { room.isProcessing = false; updateGameState(roomName, "PLAYING"); }
     }, waitTime); 
 }
+
 function endRoundLogic(roomName) {
     const room = rooms[roomName]; room.isProcessing = true; let reportMsg = "📉 <b>RISULTATI TURNO</b> 📉<br>";
     const cappotto = room.players.find(p => p.lives>0 && p.bid===room.roundCardsCount && p.tricksWon===room.roundCardsCount);
