@@ -156,11 +156,22 @@
         const CARTELLE_LOCALE = "/carte/";
         let isBlindModeActive = false; 
         let currentBlindCards = [];
+        // --- STATO TAVOLO PERSISTENTE ---
+        let currentTableState = []; // Mantiene le carte finché non arrivano vuote
 
         socket.on('connect', () => { 
             myId = socket.id; 
             if(localStorage.getItem('bisca_username')) document.getElementById('username').value = localStorage.getItem('bisca_username');
             if(localStorage.getItem('bisca_room')) document.getElementById('roomname').value = localStorage.getItem('bisca_room');
+        });
+
+        // GESTIONE ERRORI
+        socket.on('errorMsg', (msg) => {
+            alert(msg);
+            document.getElementById('game-area').style.display='none';
+            document.getElementById('lobby').style.display='none';
+            document.getElementById('chat-sidebar').style.display='none';
+            document.getElementById('login').style.display='block';
         });
 
         function sendChat() {
@@ -223,6 +234,7 @@
             document.getElementById('game-area').style.display = 'none';
             document.getElementById('lobby').style.display = 'block';
             isBlindModeActive = false; currentBlindCards = [];
+            currentTableState = [];
             document.getElementById('my-hand').innerHTML = '';
             document.getElementById('seats-container').innerHTML = '';
         });
@@ -257,7 +269,10 @@
             document.getElementById('lobby-list').innerHTML = list.map(x=>x.name).join('<br>');
             if (d.isHost) { document.getElementById('host-controls').style.display = 'block'; document.getElementById('waiting-msg').style.display = 'none'; } 
             else { document.getElementById('host-controls').style.display = 'none'; document.getElementById('waiting-msg').style.display = 'block'; }
+            
+            // RENDERIZZA I GIOCATORI E POI RIMETTE LE CARTE SUL TAVOLO
             renderTable(list);
+            updateTable(currentTableState);
         });
 
         socket.on('updateBonus', d => updateBonusUI(d));
@@ -268,22 +283,25 @@
         }
 
         socket.on('updateHand', h => {
-            // FIX: Se la mano è vuota (carta giocata), aggiornala anche se in cieca!
             if(isBlindModeActive && h.length > 0) return; 
-            
             switchToGameView();
             const div = document.getElementById('my-hand'); div.innerHTML='';
             h.forEach((c, i) => div.appendChild(renderCard(c, true, i)));
         });
         
-        socket.on('tableUpdate', t => updateTable(t));
+        socket.on('tableUpdate', t => {
+            // AGGIORNA STATO E DISEGNA
+            currentTableState = t; 
+            updateTable(t);
+        });
+
         socket.on('turnUpdate', d => updateTurn(d.playerId===myId, d.phase, d.roundCards));
         socket.on('gamePaused', p => document.getElementById('pause-overlay').style.display = p ? 'flex':'none');
         socket.on('statusMsg', m => document.getElementById('status-msg').innerHTML = m);
         
         socket.on('trickResult', m => { 
             const el = document.getElementById('status-msg'); el.innerHTML=m; el.style.color='gold'; el.style.borderColor='gold';
-            setTimeout(()=> { el.style.color='#eee'; el.style.borderColor='#d4af37'; }, 5000); 
+            setTimeout(()=> { el.style.color='#eee'; el.style.borderColor='#d4af37'; }, 2000); 
         });
         socket.on('gameOver', m => { alert(m); });
 

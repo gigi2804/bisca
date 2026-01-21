@@ -17,9 +17,6 @@ app.get('/', (req, res) => { res.sendFile(__dirname + '/index.html'); });
 const rooms = {}; 
 const SUITS = ['denari', 'coppe', 'spade', 'bastoni'];
 
-// LOG DI AVVIO PER ESSERE SICURI CHE IL FILE SIA AGGIORNATO
-console.log("!!! SERVER AVVIATO CON TIMER LUNGHI V3 !!!");
-
 function createRoomState() {
     return {
         players: [], deck: [], tableCards: [],
@@ -181,23 +178,21 @@ function evaluateTrick(roomName) {
     
     io.to(roomName).emit('trickResult', wPlayer ? `Presa: ${wPlayer.name}` : `Presa: (Uscito)`); 
     
-    // Aggiorniamo subito le "Prese Fatte" così tutti vedono il +1, MA LE CARTE RESTANO
+    // Aggiorniamo le info dei giocatori (punteggio), il client ridisegnerà le sedie
+    // MA GRAZIE AL FIX NEL CLIENT, LE CARTE NON SPARIRANNO
     broadcastUpdate(roomName);
     
-    // CALCOLO DEL TEMPO SICURO
-    // Se carte in mano = 1 (quindi dopo aver giocato sono 0), è il turno cieca o l'ultimo turno.
-    // Usiamo roundCardsCount.
-    let waitTime = 4000; // Default 4 secondi
-    if (room.roundCardsCount === 1) waitTime = 10000; // 10 Secondi per il turno singolo
+    // TIMER FISSO 4 SECONDI
+    const waitTime = 4000;
 
-    console.log(`[${roomName}] Fine Mano. Attendo ${waitTime}ms prima di pulire.`);
+    console.log(`[${roomName}] Fine Mano. Attendo ${waitTime}ms.`);
 
     setTimeout(() => {
         try {
             if(!rooms[roomName]) return;
             const r = rooms[roomName]; 
             
-            // SOLO ORA PULISCO IL TAVOLO
+            // ORA PULIAMO
             r.tableCards = []; 
             io.to(roomName).emit('tableUpdate', []); 
             io.to(roomName).emit('clearBlindCards'); 
