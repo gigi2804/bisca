@@ -17,6 +17,9 @@ app.get('/', (req, res) => { res.sendFile(__dirname + '/index.html'); });
 const rooms = {}; 
 const SUITS = ['denari', 'coppe', 'spade', 'bastoni'];
 
+// LOG DI AVVIO PER ESSERE SICURI CHE IL FILE SIA AGGIORNATO
+console.log("!!! SERVER AVVIATO CON TIMER LUNGHI V3 !!!");
+
 function createRoomState() {
     return {
         players: [], deck: [], tableCards: [],
@@ -63,7 +66,7 @@ io.on('connection', (socket) => {
               if(room.players.length === 0) delete rooms[roomName];
               else broadcastUpdate(roomName); 
           }
-      } catch (e) { console.error("Errore disconnessione:", e); }
+      } catch (e) { console.error(e); }
   });
 
   socket.on('sendChat', (message) => {
@@ -96,7 +99,7 @@ io.on('connection', (socket) => {
 
           if (!room.players.find(p => p.id === socket.id)) room.players.push({ id: socket.id, name, lives: 5, hand: [], bid: null, tricksWon: 0 });
           broadcastUpdate(sanitizedRoom);
-      } catch(e) { console.error("Errore join:", e); }
+      } catch(e) { console.error(e); }
   });
 
   socket.on('startGame', (opts) => {
@@ -109,7 +112,7 @@ io.on('connection', (socket) => {
           room.players.forEach(p => { p.lives = room.gameSettings.lives; p.hand = []; p.bid = null; p.tricksWon = 0; });
           room.dealerIndex = Math.floor(Math.random() * room.players.length); room.roundCardsCount = 5; 
           io.to(roomName).emit('updateBonus', { used: false, by: null }); startRound(roomName);
-      } catch(e) { console.error("Errore start:", e); }
+      } catch(e) { console.error(e); }
   });
 
   socket.on('togglePause', () => {
@@ -126,7 +129,7 @@ io.on('connection', (socket) => {
           if(room.gameState==="PAUSED" || !room.players[room.currentPlayerIndex] || room.players[room.currentPlayerIndex].id !== socket.id) return;
           if(room.currentPlayerIndex === room.dealerIndex && room.players.filter(p=>p.lives>0).reduce((s,p)=>s+(p.bid||0),0)+bid===room.roundCardsCount) return socket.emit('errorMsg', "Somma vietata!");
           room.players.find(p=>p.id===socket.id).bid = bid; broadcastUpdate(roomName); nextTurn(roomName, 'BIDDING');
-      } catch(e) { console.error("Errore bid:", e); }
+      } catch(e) { console.error(e); }
   });
 
   socket.on('playCard', (data) => {
@@ -139,7 +142,7 @@ io.on('connection', (socket) => {
           let isHigh = (c.suit==='denari'&&c.value===1&&data.assoChoice==='HIGH');
           room.tableCards.push({ playerId: p.id, card: c, isAssoHigh: isHigh, playerName: p.name });
           io.to(roomName).emit('tableUpdate', room.tableCards); io.to(p.id).emit('updateHand', p.hand); nextTurn(roomName, 'PLAYING');
-      } catch(e) { console.error("Errore play:", e); }
+      } catch(e) { console.error(e); }
   });
 });
 
@@ -173,49 +176,43 @@ function evaluateTrick(roomName) {
     let winner = room.tableCards[0], maxP = getCardPower(winner.card, winner.isAssoHigh);
     for (let i = 1; i < room.tableCards.length; i++) { let p = getCardPower(room.tableCards[i].card, room.tableCards[i].isAssoHigh); if (p > maxP) { winner = room.tableCards[i]; maxP = p; } }
     
-    // SAFE CHECK: Se il vincitore è uscito mentre si giocava, non crashare
     let wPlayer = room.players.find(p => p.id === winner.playerId);
     if(wPlayer) wPlayer.tricksWon++; 
     
-    io.to(roomName).emit('trickResult', wPlayer ? `Presa: ${wPlayer.name}` : `Presa: (Giocatore Uscito)`); 
+    io.to(roomName).emit('trickResult', wPlayer ? `Presa: ${wPlayer.name}` : `Presa: (Uscito)`); 
+    
+    // Aggiorniamo subito le "Prese Fatte" così tutti vedono il +1, MA LE CARTE RESTANO
     broadcastUpdate(roomName);
     
-    const waitTime = (room.roundCardsCount === 1) ? 5000 : 5000;
+    // CALCOLO DEL TEMPO SICURO
+    // Se carte in mano = 1 (quindi dopo aver giocato sono 0), è il turno cieca o l'ultimo turno.
+    // Usiamo roundCardsCount.
+    let waitTime = 4000; // Default 4 secondi
+    if (room.roundCardsCount === 1) waitTime = 10000; // 10 Secondi per il turno singolo
+
+    console.log(`[${roomName}] Fine Mano. Attendo ${waitTime}ms prima di pulire.`);
 
     setTimeout(() => {
         try {
             if(!rooms[roomName]) return;
-            const r = rooms[roomName]; // Ricarica riferimento sicuro
+            const r = rooms[roomName]; 
+            
+            // SOLO ORA PULISCO IL TAVOLO
             r.tableCards = []; 
             io.to(roomName).emit('tableUpdate', []); 
             io.to(roomName).emit('clearBlindCards'); 
             
-            // TROVA IL PROSSIMO GIOCATORE IN MODO SICURO
             let nextIdx = r.players.findIndex(p => p.id === winner.playerId);
+            if (nextIdx === -1) nextIdx = getNextAliveIndex(0, r.players);
             
-            // Se il vincitore è uscito durante il timer, passa il turno al primo vivo disponibile
-            if (nextIdx === -1) {
-                nextIdx = getNextAliveIndex(0, r.players);
-            }
-
             r.currentPlayerIndex = nextIdx;
             
-            // CONTROLLO ANTI-CRASH: Se hand non esiste o giocatore non esiste
-            if (!r.players[nextIdx] || !r.players[nextIdx].hand) {
-                // Situazione critica: resetta il round o termina
-                endRoundLogic(roomName);
-                return;
-            }
+            if (!r.players[nextIdx] || !r.players[nextIdx].hand) { endRoundLogic(roomName); return; }
+            if (r.players[nextIdx].hand.length === 0) endRoundLogic(roomName); 
+            else { r.isProcessing = false; updateGameState(roomName, "PLAYING"); }
 
-            if (r.players[nextIdx].hand.length === 0) {
-                endRoundLogic(roomName); 
-            } else { 
-                r.isProcessing = false; 
-                updateGameState(roomName, "PLAYING"); 
-            }
         } catch (e) {
             console.error("Errore timeout trick:", e);
-            // In caso di errore grave nel timeout, sblocca il gioco
             if(rooms[roomName]) rooms[roomName].isProcessing = false;
         }
     }, waitTime); 
