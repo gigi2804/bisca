@@ -41,23 +41,29 @@ function getCardPower(c, isAssoHigh) {
   return p + c.value;
 }
 function getNextAliveIndex(curr, players) {
+    if(!players || players.length === 0) return 0;
     let next = (curr + 1) % players.length;
     let loopCount = 0;
-    while (players[next].lives <= 0 && loopCount < players.length) { next = (next + 1) % players.length; loop++; }
+    while (players[next] && players[next].lives <= 0 && loopCount < players.length) { 
+        next = (next + 1) % players.length; 
+        loopCount++; 
+    }
     return next;
 }
 
 io.on('connection', (socket) => {
   socket.on('disconnect', () => {
-      const roomName = socket.roomName;
-      if (!roomName || !rooms[roomName]) return;
-      const room = rooms[roomName];
-      const index = room.players.findIndex(p => p.id === socket.id);
-      if (index !== -1 && room.gameState === "LOBBY") {
-          room.players.splice(index, 1);
-          if(room.players.length === 0) delete rooms[roomName];
-          else broadcastUpdate(roomName); 
-      }
+      try {
+          const roomName = socket.roomName;
+          if (!roomName || !rooms[roomName]) return;
+          const room = rooms[roomName];
+          const index = room.players.findIndex(p => p.id === socket.id);
+          if (index !== -1 && room.gameState === "LOBBY") {
+              room.players.splice(index, 1);
+              if(room.players.length === 0) delete rooms[roomName];
+              else broadcastUpdate(roomName); 
+          }
+      } catch (e) { console.error("Errore disconnessione:", e); }
   });
 
   socket.on('sendChat', (message) => {
@@ -68,44 +74,42 @@ io.on('connection', (socket) => {
   });
 
   socket.on('join', (data) => {
-      const { name, roomName } = data;
-      const sanitizedRoom = roomName.trim().toUpperCase();
-      socket.join(sanitizedRoom); socket.roomName = sanitizedRoom;
+      try {
+          const { name, roomName } = data;
+          if(!name || !roomName) return;
+          const sanitizedRoom = roomName.trim().toUpperCase();
+          socket.join(sanitizedRoom); socket.roomName = sanitizedRoom;
 
-      if (!rooms[sanitizedRoom]) rooms[sanitizedRoom] = createRoomState();
-      const room = rooms[sanitizedRoom];
+          if (!rooms[sanitizedRoom]) rooms[sanitizedRoom] = createRoomState();
+          const room = rooms[sanitizedRoom];
 
-      // 1. CONTROLLO RICONESSIONE (Priorità assoluta: se esiste già, fallo entrare)
-      const ex = room.players.find(p => p.name === name);
-      if (ex) {
-          ex.id = socket.id; 
-          socket.emit('reconnectData', { myId: ex.id, hand: ex.hand, gameState: room.gameState, isMyTurn: (room.players[room.currentPlayerIndex]?.id === ex.id), players: room.players.map(p => ({ id: p.id, name: p.name, lives: p.lives, lastBid: p.bid, lastWon: p.tricksWon })), table: room.tableCards, phase: room.gameState, roundCards: room.roundCardsCount, bonusInfo: { used: room.bonusLifeUsed, by: room.bonusUsedBy }, isHost: (room.players[0].id === ex.id) });
-          if (room.roundCardsCount === 1 && room.gameSettings.blindMode && room.gameState !== 'LOBBY') socket.emit('blindRoundInfo', room.players.map(p => ({id: p.id, card: (p.lives > 0 && p.hand.length > 0) ? p.hand[0] : null})));
-          return;
-      }
+          const ex = room.players.find(p => p.name === name);
+          if (ex) {
+              ex.id = socket.id; 
+              socket.emit('reconnectData', { myId: ex.id, hand: ex.hand, gameState: room.gameState, isMyTurn: (room.players[room.currentPlayerIndex]?.id === ex.id), players: room.players.map(p => ({ id: p.id, name: p.name, lives: p.lives, lastBid: p.bid, lastWon: p.tricksWon })), table: room.tableCards, phase: room.gameState, roundCards: room.roundCardsCount, bonusInfo: { used: room.bonusLifeUsed, by: room.bonusUsedBy }, isHost: (room.players[0].id === ex.id) });
+              if (room.roundCardsCount === 1 && room.gameSettings.blindMode && room.gameState !== 'LOBBY') socket.emit('blindRoundInfo', room.players.map(p => ({id: p.id, card: (p.lives > 0 && p.hand.length > 0) ? p.hand[0] : null})));
+              return;
+          }
 
-      // 2. CONTROLLO PARTITA INIZIATA
-      if (room.gameState !== "LOBBY") return socket.emit('errorMsg', 'Partita iniziata!');
+          if (room.gameState !== "LOBBY") return socket.emit('errorMsg', 'Partita iniziata!');
+          if (room.players.length >= 8) return socket.emit('errorMsg', 'Tavolo Pieno! Massimo 8 giocatori.');
 
-      // 3. NUOVO CONTROLLO: MASSIMO 8 GIOCATORI
-      if (room.players.length >= 8) {
-          return socket.emit('errorMsg', 'Tavolo Pieno! Massimo 8 giocatori.');
-      }
-
-      // 4. AGGIUNGI NUOVO GIOCATORE
-      if (!room.players.find(p => p.id === socket.id)) room.players.push({ id: socket.id, name, lives: 5, hand: [], bid: null, tricksWon: 0 });
-      broadcastUpdate(sanitizedRoom);
+          if (!room.players.find(p => p.id === socket.id)) room.players.push({ id: socket.id, name, lives: 5, hand: [], bid: null, tricksWon: 0 });
+          broadcastUpdate(sanitizedRoom);
+      } catch(e) { console.error("Errore join:", e); }
   });
 
   socket.on('startGame', (opts) => {
-      const roomName = socket.roomName; if (!roomName || !rooms[roomName]) return;
-      const room = rooms[roomName];
-      if (room.players[0].id !== socket.id || room.players.length < 2) return socket.emit('errorMsg', 'Minimo 2 giocatori!');
-      room.gameSettings.lives = parseInt(opts.lives)||5; room.gameSettings.blindMode = opts.blindMode||false;
-      room.gameState = "BIDDING"; room.bonusLifeUsed = false; room.bonusUsedBy = null;
-      room.players.forEach(p => { p.lives = room.gameSettings.lives; p.hand = []; p.bid = null; p.tricksWon = 0; });
-      room.dealerIndex = Math.floor(Math.random() * room.players.length); room.roundCardsCount = 5; 
-      io.to(roomName).emit('updateBonus', { used: false, by: null }); startRound(roomName);
+      try {
+          const roomName = socket.roomName; if (!roomName || !rooms[roomName]) return;
+          const room = rooms[roomName];
+          if (room.players[0].id !== socket.id || room.players.length < 2) return socket.emit('errorMsg', 'Minimo 2 giocatori!');
+          room.gameSettings.lives = parseInt(opts.lives)||5; room.gameSettings.blindMode = opts.blindMode||false;
+          room.gameState = "BIDDING"; room.bonusLifeUsed = false; room.bonusUsedBy = null;
+          room.players.forEach(p => { p.lives = room.gameSettings.lives; p.hand = []; p.bid = null; p.tricksWon = 0; });
+          room.dealerIndex = Math.floor(Math.random() * room.players.length); room.roundCardsCount = 5; 
+          io.to(roomName).emit('updateBonus', { used: false, by: null }); startRound(roomName);
+      } catch(e) { console.error("Errore start:", e); }
   });
 
   socket.on('togglePause', () => {
@@ -116,27 +120,32 @@ io.on('connection', (socket) => {
   });
 
   socket.on('placeBid', (bid) => {
-      const roomName = socket.roomName; if (!roomName || !rooms[roomName]) return;
-      const room = rooms[roomName];
-      if(room.gameState==="PAUSED" || room.players[room.currentPlayerIndex].id !== socket.id) return;
-      if(room.currentPlayerIndex === room.dealerIndex && room.players.filter(p=>p.lives>0).reduce((s,p)=>s+(p.bid||0),0)+bid===room.roundCardsCount) return socket.emit('errorMsg', "Somma vietata!");
-      room.players.find(p=>p.id===socket.id).bid = bid; broadcastUpdate(roomName); nextTurn(roomName, 'BIDDING');
+      try {
+          const roomName = socket.roomName; if (!roomName || !rooms[roomName]) return;
+          const room = rooms[roomName];
+          if(room.gameState==="PAUSED" || !room.players[room.currentPlayerIndex] || room.players[room.currentPlayerIndex].id !== socket.id) return;
+          if(room.currentPlayerIndex === room.dealerIndex && room.players.filter(p=>p.lives>0).reduce((s,p)=>s+(p.bid||0),0)+bid===room.roundCardsCount) return socket.emit('errorMsg', "Somma vietata!");
+          room.players.find(p=>p.id===socket.id).bid = bid; broadcastUpdate(roomName); nextTurn(roomName, 'BIDDING');
+      } catch(e) { console.error("Errore bid:", e); }
   });
 
   socket.on('playCard', (data) => {
-      const roomName = socket.roomName; if (!roomName || !rooms[roomName]) return;
-      const room = rooms[roomName];
-      if(room.gameState==="PAUSED" || room.isProcessing || room.players[room.currentPlayerIndex].id !== socket.id) return;
-      const p = room.players.find(x=>x.id===socket.id), c = p.hand[data.cardIndex];
-      p.hand.splice(data.cardIndex, 1);
-      let isHigh = (c.suit==='denari'&&c.value===1&&data.assoChoice==='HIGH');
-      room.tableCards.push({ playerId: p.id, card: c, isAssoHigh: isHigh, playerName: p.name });
-      io.to(roomName).emit('tableUpdate', room.tableCards); io.to(p.id).emit('updateHand', p.hand); nextTurn(roomName, 'PLAYING');
+      try {
+          const roomName = socket.roomName; if (!roomName || !rooms[roomName]) return;
+          const room = rooms[roomName];
+          if(room.gameState==="PAUSED" || room.isProcessing || !room.players[room.currentPlayerIndex] || room.players[room.currentPlayerIndex].id !== socket.id) return;
+          const p = room.players.find(x=>x.id===socket.id), c = p.hand[data.cardIndex];
+          p.hand.splice(data.cardIndex, 1);
+          let isHigh = (c.suit==='denari'&&c.value===1&&data.assoChoice==='HIGH');
+          room.tableCards.push({ playerId: p.id, card: c, isAssoHigh: isHigh, playerName: p.name });
+          io.to(roomName).emit('tableUpdate', room.tableCards); io.to(p.id).emit('updateHand', p.hand); nextTurn(roomName, 'PLAYING');
+      } catch(e) { console.error("Errore play:", e); }
   });
 });
 
 function broadcastUpdate(roomName) {
     const room = rooms[roomName];
+    if(!room) return;
     room.players.forEach(p => {
         io.to(p.id).emit('updatePlayers', {
             list: room.players.map(pl => ({ id: pl.id, name: pl.name, lives: pl.lives, lastBid: pl.bid, lastWon: pl.tricksWon })),
@@ -163,27 +172,51 @@ function evaluateTrick(roomName) {
     room.isProcessing = true;
     let winner = room.tableCards[0], maxP = getCardPower(winner.card, winner.isAssoHigh);
     for (let i = 1; i < room.tableCards.length; i++) { let p = getCardPower(room.tableCards[i].card, room.tableCards[i].isAssoHigh); if (p > maxP) { winner = room.tableCards[i]; maxP = p; } }
-    const wPlayer = room.players.find(p => p.id === winner.playerId); wPlayer.tricksWon++; 
     
-    io.to(roomName).emit('trickResult', `Presa: ${wPlayer.name}`); 
+    // SAFE CHECK: Se il vincitore è uscito mentre si giocava, non crashare
+    let wPlayer = room.players.find(p => p.id === winner.playerId);
+    if(wPlayer) wPlayer.tricksWon++; 
+    
+    io.to(roomName).emit('trickResult', wPlayer ? `Presa: ${wPlayer.name}` : `Presa: (Giocatore Uscito)`); 
     broadcastUpdate(roomName);
     
-    // TIMER LUNGHI: 10s per Cieca, 4s per Normale
-    const waitTime = (room.roundCardsCount === 1) ? 10000 : 4000;
+    const waitTime = (room.roundCardsCount === 1) ? 5000 : 5000;
 
     setTimeout(() => {
-        if(!rooms[roomName]) return;
-        room.tableCards = []; 
-        io.to(roomName).emit('tableUpdate', []); 
-        io.to(roomName).emit('clearBlindCards'); 
-        
-        room.currentPlayerIndex = room.players.findIndex(p => p.id === winner.playerId);
-        
-        if (room.players[room.currentPlayerIndex].hand.length === 0) {
-            endRoundLogic(roomName); 
-        } else { 
-            room.isProcessing = false; 
-            updateGameState(roomName, "PLAYING"); 
+        try {
+            if(!rooms[roomName]) return;
+            const r = rooms[roomName]; // Ricarica riferimento sicuro
+            r.tableCards = []; 
+            io.to(roomName).emit('tableUpdate', []); 
+            io.to(roomName).emit('clearBlindCards'); 
+            
+            // TROVA IL PROSSIMO GIOCATORE IN MODO SICURO
+            let nextIdx = r.players.findIndex(p => p.id === winner.playerId);
+            
+            // Se il vincitore è uscito durante il timer, passa il turno al primo vivo disponibile
+            if (nextIdx === -1) {
+                nextIdx = getNextAliveIndex(0, r.players);
+            }
+
+            r.currentPlayerIndex = nextIdx;
+            
+            // CONTROLLO ANTI-CRASH: Se hand non esiste o giocatore non esiste
+            if (!r.players[nextIdx] || !r.players[nextIdx].hand) {
+                // Situazione critica: resetta il round o termina
+                endRoundLogic(roomName);
+                return;
+            }
+
+            if (r.players[nextIdx].hand.length === 0) {
+                endRoundLogic(roomName); 
+            } else { 
+                r.isProcessing = false; 
+                updateGameState(roomName, "PLAYING"); 
+            }
+        } catch (e) {
+            console.error("Errore timeout trick:", e);
+            // In caso di errore grave nel timeout, sblocca il gioco
+            if(rooms[roomName]) rooms[roomName].isProcessing = false;
         }
     }, waitTime); 
 }
