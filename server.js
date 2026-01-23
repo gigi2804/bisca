@@ -13,7 +13,7 @@ app.use('/carte', express.static(path.join(__dirname, 'carte')));
 
 app.get('/', (req, res) => { res.sendFile(__dirname + '/index.html'); });
 
-console.log("SERVER AVVIATO: Logica Salto 5 Giocatori (Smart Memory)");
+console.log("SERVER AVVIATO: Timer Disconnessione 30s & Recupero");
 
 const rooms = {}; 
 const SUITS = ['denari', 'coppe', 'spade', 'bastoni'];
@@ -28,7 +28,8 @@ function createRoomState() {
         gameSettings: { lives: 5, blindMode: false },
         bonusLifeUsed: false, bonusUsedBy: null,
         restartVotes: new Set(),
-        lastRoundPlayerCount: 0 // NUOVO: Memoria per il salto mazziere
+        lastRoundPlayerCount: 0,
+        disconnectTimers: {} // Mappa: NomeGiocatore -> TimerID
     };
 }
 
@@ -55,90 +56,75 @@ function getNextAliveIndex(curr, players) {
 }
 
 io.on('connection', (socket) => {
-  socket.on('disconnect', () => { handleLeave(socket); });
-  socket.on('leaveRoom', () => { handleLeave(socket); });
+  // Disconnessione fisica (chiusura tab, internet off)
+  socket.on('disconnect', () => { handleLeave(socket, true); });
+  // Uscita volontaria (tasto cambia stanza)
+  socket.on('leaveRoom', () => { handleLeave(socket, false); });
 
-  function handleLeave(sock) {
+  function handleLeave(sock, isDisconnectError) {
       try {
           const roomName = sock.roomName;
           if (!roomName || !rooms[roomName]) return;
           const room = rooms[roomName];
+          
           room.restartVotes.delete(sock.id);
-          const index = room.players.findIndex(p => p.id === sock.id);
-          if (index !== -1) {
+          const p = room.players.find(x => x.id === sock.id);
+          const index = room.players.findIndex(x => x.id === sock.id);
+
+          if (index !== -1 && p) {
               if (room.gameState === "LOBBY") {
+                  // In Lobby si esce subito
                   room.players.splice(index, 1);
                   if(room.players.length === 0) delete rooms[roomName];
                   else broadcastUpdate(roomName); 
+              } else {
+                  // IN PARTITA
+                  if (isDisconnectError) {
+                      // Se è un crash/disconnessione involontaria -> AVVIA TIMER DI GRAZIA
+                      io.to(roomName).emit('statusMsg', `⚠️ <b>${p.name}</b> disconnesso. Attesa 30s...`);
+                      
+                      // Salva il timer usando il NOME (perché l'ID cambierà se rientra)
+                      if (room.disconnectTimers[p.name]) clearTimeout(room.disconnectTimers[p.name]);
+                      
+                      room.disconnectTimers[p.name] = setTimeout(() => {
+                          handleTimeoutDeath(roomName, p.name);
+                      }, 30000); // 30 Secondi
+
+                  } else {
+                      // Se è uscita volontaria (leaveRoom), muore subito
+                      handleTimeoutDeath(roomName, p.name);
+                  }
               }
           }
       } catch (e) { console.error(e); }
   }
 
-  socket.on('switchRole', (wantsToPlay) => {
-      const roomName = socket.roomName;
-      if (!roomName || !rooms[roomName]) return;
+  function handleTimeoutDeath(roomName, playerName) {
+      if (!rooms[roomName]) return;
       const room = rooms[roomName];
-      const p = room.players.find(x => x.id === socket.id);
-      if(p) {
-          if (wantsToPlay) {
-              const activePlayers = room.players.filter(x => !x.isSpectator).length;
-              if (activePlayers < 8) {
-                  p.isSpectator = false;
-                  p.lives = 5; 
-              } else {
-                  socket.emit('warning', "Tavolo pieno! Rimani spettatore.");
-                  p.isSpectator = true;
-              }
-          } else {
-              p.isSpectator = true;
-              p.lives = 0;
-          }
-          broadcastUpdate(roomName);
-      }
-  });
+      const p = room.players.find(x => x.name === playerName);
+      
+      if (p) {
+          // Rimuovi timer se esiste
+          if (room.disconnectTimers[playerName]) delete room.disconnectTimers[playerName];
 
-  socket.on('voteRestart', () => {
-      const roomName = socket.roomName;
-      if (!roomName || !rooms[roomName]) return;
-      const room = rooms[roomName];
-      const p = room.players.find(x => x.id === socket.id);
-      if (!p || p.isSpectator) return;
-      if (room.restartVotes.has(socket.id)) return; 
+          // Se è già spettatore o morto, non fare nulla
+          if (p.isSpectator || p.lives <= 0) return;
 
-      room.restartVotes.add(socket.id);
-      const activePlayersCount = room.players.filter(pl => !pl.isSpectator).length;
-      const votes = room.restartVotes.size;
-
-      io.to(roomName).emit('statusMsg', `🔄 Voto Reset: ${votes}/${activePlayersCount}`);
-
-      if (votes >= activePlayersCount) {
-          io.to(roomName).emit('statusMsg', `✅ RESET APPROVATO!`);
-          setTimeout(() => resetGame(roomName), 1500);
-      }
-  });
-
-  socket.on('leaveGame', () => {
-      const roomName = socket.roomName;
-      if (!roomName || !rooms[roomName]) return;
-      const room = rooms[roomName];
-      const p = room.players.find(x => x.id === socket.id);
-      if (p && p.lives > 0) {
-          p.lives = 0; 
-          io.to(roomName).emit('statusMsg', `<span style="color:red">🏳️ ${p.name} HA ABBANDONATO!</span>`);
+          io.to(roomName).emit('statusMsg', `<span style="color:red">⌛ ${p.name} scaduto! Eliminato.</span>`);
+          
+          p.lives = 0;
+          p.isSpectator = true; // Lo rendiamo spettatore così non blocca i voti reset
+          
+          // Sblocca il gioco se era il suo turno
           if (room.gameState === "PLAYING" || room.gameState === "BIDDING") {
               room.isProcessing = true; 
               setTimeout(() => endRoundLogic(roomName, true), 1000);
-          } else { broadcastUpdate(roomName); }
-      } else if (p) { socket.emit('errorMsg', "Sei uscito dalla partita."); }
-  });
-
-  socket.on('sendChat', (message) => {
-      const roomName = socket.roomName;
-      if (!roomName || !rooms[roomName]) return;
-      const p = rooms[roomName].players.find(x => x.id === socket.id);
-      if (p) io.to(roomName).emit('chatMessage', { name: p.name, text: message, id: p.id });
-  });
+          } else {
+              broadcastUpdate(roomName);
+          }
+      }
+  }
 
   socket.on('join', (data) => {
       try {
@@ -152,8 +138,20 @@ io.on('connection', (socket) => {
 
           const ex = room.players.find(p => p.name === name);
           if (ex) {
-              ex.id = socket.id; 
+              // --- LOGICA RICONESSIONE ---
+              
+              // 1. Se c'era un timer di morte pendente, cancellalo! È tornato!
+              if (room.disconnectTimers[name]) {
+                  clearTimeout(room.disconnectTimers[name]);
+                  delete room.disconnectTimers[name];
+                  io.to(roomName).emit('statusMsg', `✅ <b>${name}</b> è tornato!`);
+              }
+
+              // 2. Aggiorna l'ID del socket
+              // Rimuovi vecchio ID dai voti e metti il nuovo
               if(room.restartVotes.has(ex.id)) { room.restartVotes.delete(ex.id); room.restartVotes.add(socket.id); }
+              ex.id = socket.id; 
+              
               socket.emit('reconnectData', { myId: ex.id, hand: ex.hand, gameState: room.gameState, isMyTurn: (room.players[room.currentPlayerIndex]?.id === ex.id), players: room.players.map(p => ({ id: p.id, name: p.name, lives: p.lives, lastBid: p.bid, lastWon: p.tricksWon })), table: room.tableCards, phase: room.gameState, roundCards: room.roundCardsCount, bonusInfo: { used: room.bonusLifeUsed, by: room.bonusUsedBy }, isHost: (room.players[0].id === ex.id) });
               if (room.roundCardsCount === 1 && room.gameSettings.blindMode && room.gameState !== 'LOBBY') socket.emit('blindRoundInfo', room.players.map(p => ({id: p.id, card: (p.lives > 0 && p.hand.length > 0) ? p.hand[0] : null})));
               return;
@@ -179,28 +177,62 @@ io.on('connection', (socket) => {
       } catch(e) { console.error(e); }
   });
 
+  // --- RESTO DEL CODICE UGUALE, RIPORTO PER COMPLETEZZA ---
+  socket.on('switchRole', (wantsToPlay) => {
+      const roomName = socket.roomName; if (!roomName || !rooms[roomName]) return;
+      const room = rooms[roomName]; const p = room.players.find(x => x.id === socket.id);
+      if(p) {
+          if (wantsToPlay) {
+              const activePlayers = room.players.filter(x => !x.isSpectator).length;
+              if (activePlayers < 8) { p.isSpectator = false; p.lives = 5; } else { socket.emit('warning', "Tavolo pieno! Rimani spettatore."); p.isSpectator = true; }
+          } else { p.isSpectator = true; p.lives = 0; }
+          broadcastUpdate(roomName);
+      }
+  });
+
+  socket.on('voteRestart', () => {
+      const roomName = socket.roomName; if (!roomName || !rooms[roomName]) return;
+      const room = rooms[roomName]; const p = room.players.find(x => x.id === socket.id);
+      if (!p || p.isSpectator) return;
+      if (room.restartVotes.has(socket.id)) return; 
+      room.restartVotes.add(socket.id);
+      const activePlayersCount = room.players.filter(pl => !pl.isSpectator).length;
+      const votes = room.restartVotes.size;
+      io.to(roomName).emit('statusMsg', `🔄 Voto Reset: ${votes}/${activePlayersCount}`);
+      if (votes >= activePlayersCount) { io.to(roomName).emit('statusMsg', `✅ RESET APPROVATO!`); setTimeout(() => resetGame(roomName), 1500); }
+  });
+
+  socket.on('leaveGame', () => {
+      const roomName = socket.roomName; if (!roomName || !rooms[roomName]) return;
+      const room = rooms[roomName]; const p = room.players.find(x => x.id === socket.id);
+      if (p && p.lives > 0) {
+          p.lives = 0; io.to(roomName).emit('statusMsg', `<span style="color:red">🏳️ ${p.name} HA ABBANDONATO!</span>`);
+          if (room.gameState === "PLAYING" || room.gameState === "BIDDING") { room.isProcessing = true; setTimeout(() => endRoundLogic(roomName, true), 1000); } else { broadcastUpdate(roomName); }
+      } else if (p) { socket.emit('errorMsg', "Sei uscito dalla partita."); }
+  });
+
+  socket.on('sendChat', (message) => {
+      const roomName = socket.roomName; if (!roomName || !rooms[roomName]) return;
+      const p = rooms[roomName].players.find(x => x.id === socket.id);
+      if (p) io.to(roomName).emit('chatMessage', { name: p.name, text: message, id: p.id });
+  });
+
   socket.on('startGame', (opts) => {
       try {
           const roomName = socket.roomName; if (!roomName || !rooms[roomName]) return;
           const room = rooms[roomName];
-          if (room.players[0].id !== socket.id || room.players.length < 2) return socket.emit('errorMsg', 'Minimo 2 giocatori!');
+          const activePlayersCount = room.players.filter(p => !p.isSpectator).length;
+          if (room.players[0].id !== socket.id) return;
+          if (activePlayersCount < 2) return socket.emit('errorMsg', 'Minimo 2 giocatori attivi per iniziare!');
           room.gameSettings.lives = parseInt(opts.lives)||5; room.gameSettings.blindMode = opts.blindMode||false;
           room.gameState = "BIDDING"; room.bonusLifeUsed = false; room.bonusUsedBy = null;
           room.restartVotes.clear(); 
-          
-          let activePlayersCount = 0;
+          let countForLogic = 0;
           room.players.forEach(p => { 
-              if (!p.isSpectator) { 
-                  p.lives = room.gameSettings.lives; 
-                  p.hand = []; p.bid = null; p.tricksWon = 0; 
-                  activePlayersCount++;
-              } 
+              if (!p.isSpectator) { p.lives = room.gameSettings.lives; p.hand = []; p.bid = null; p.tricksWon = 0; countForLogic++; } 
               else { p.lives = 0; p.hand = []; }
           });
-          
-          // SALVA IL NUMERO INIZIALE DI GIOCATORI PER LA LOGICA MAZZIERE
-          room.lastRoundPlayerCount = activePlayersCount;
-
+          room.lastRoundPlayerCount = countForLogic;
           room.dealerIndex = Math.floor(Math.random() * room.players.length); room.roundCardsCount = 5; 
           io.to(roomName).emit('updateBonus', { used: false, by: null }); startRound(roomName);
       } catch(e) { console.error(e); }
@@ -218,9 +250,7 @@ io.on('connection', (socket) => {
           const roomName = socket.roomName; if (!roomName || !rooms[roomName]) return;
           const room = rooms[roomName];
           if(room.gameState==="PAUSED" || !room.players[room.currentPlayerIndex] || room.players[room.currentPlayerIndex].id !== socket.id) return;
-          if(room.currentPlayerIndex === room.dealerIndex && room.players.filter(p=>p.lives>0).reduce((s,p)=>s+(p.bid||0),0)+bid===room.roundCardsCount) {
-              return socket.emit('warning', "⚠️ Il mazziere non può chiamare questo numero!");
-          }
+          if(room.currentPlayerIndex === room.dealerIndex && room.players.filter(p=>p.lives>0).reduce((s,p)=>s+(p.bid||0),0)+bid===room.roundCardsCount) return socket.emit('warning', "⚠️ Il mazziere non può chiamare questo numero!");
           room.players.find(p=>p.id===socket.id).bid = bid; broadcastUpdate(roomName); nextTurn(roomName, 'BIDDING');
       } catch(e) { console.error(e); }
   });
@@ -268,11 +298,9 @@ function evaluateTrick(roomName) {
     room.isProcessing = true;
     let winner = room.tableCards[0], maxP = getCardPower(winner.card, winner.isAssoHigh);
     for (let i = 1; i < room.tableCards.length; i++) { let p = getCardPower(room.tableCards[i].card, room.tableCards[i].isAssoHigh); if (p > maxP) { winner = room.tableCards[i]; maxP = p; } }
-    
     let wPlayer = room.players.find(p => p.id === winner.playerId);
     let winnerName = room.players.find(p => p.id === winner.playerId)?.name || "Sconosciuto";
     io.to(roomName).emit('trickResult', `Presa: ${winnerName}`); 
-    
     const waitTime = (room.roundCardsCount === 1) ? 8000 : 4000;
     setTimeout(() => {
         try {
@@ -294,7 +322,7 @@ function evaluateTrick(roomName) {
 function endRoundLogic(roomName, safeMode = false) {
     const room = rooms[roomName]; room.isProcessing = true; let reportMsg = "📉 <b>RISULTATI TURNO</b> 📉<br>";
     if (safeMode) {
-        reportMsg += "<br>🛑 <b>TURNO INTERROTTO (ABBANDONO)</b><br>Nessuna vita persa.";
+        reportMsg += "<br>🛑 <b>TURNO INTERROTTO (DISCONNESSIONE)</b><br>Nessuna vita persa.";
         room.players.forEach(p => { if(p.lives > 0) p.hand = []; });
     } else {
         const cappotto = room.players.find(p => p.lives>0 && p.bid===room.roundCardsCount && p.tricksWon===room.roundCardsCount);
@@ -315,33 +343,17 @@ function endRoundLogic(roomName, safeMode = false) {
     
     room.roundCardsCount--; 
     
-    // --- GESTIONE SALTO MAZZIERE (5 GIOCATORI) ---
     let skipDealer = false;
-    if (active.length === 2 && room.roundCardsCount === 1) { 
-        room.roundCardsCount = 5; 
-        reportMsg += "<br>(Siamo in 2: Saltato turno da 1)"; 
-        io.to(roomName).emit('statusMsg', reportMsg); 
-    } else if (room.roundCardsCount < 1) {
+    if (active.length === 2 && room.roundCardsCount === 1) { room.roundCardsCount = 5; reportMsg += "<br>(Siamo in 2: Saltato turno da 1)"; io.to(roomName).emit('statusMsg', reportMsg); } 
+    else if (room.roundCardsCount < 1) {
         room.roundCardsCount = 5;
-        
-        // CONTA ATTUALE GIOCATORI VIVI
         const currentActiveCount = room.players.filter(p => p.lives > 0).length;
-        
-        // LOGICA MEMORIA:
-        // Se ORA siamo 5 E ANCHE L'ULTIMA VOLTA eravamo 5 -> SALTA.
-        // Se prima eravamo 6 e ora siamo 5 -> NON SALTA (aggiorna solo la memoria).
-        if (currentActiveCount === 5 && room.lastRoundPlayerCount === 5) {
-            skipDealer = true;
-        }
-        
-        // AGGIORNA LA MEMORIA PER IL PROSSIMO GIRO
+        if (currentActiveCount === 5 && room.lastRoundPlayerCount === 5) skipDealer = true;
         room.lastRoundPlayerCount = currentActiveCount;
     }
 
     room.dealerIndex = getNextAliveIndex(room.dealerIndex, room.players);
-    
     if (skipDealer) {
-        // Applica il salto
         room.dealerIndex = getNextAliveIndex(room.dealerIndex, room.players);
         setTimeout(() => io.to(roomName).emit('statusMsg', "🔀 Giro bloccato in 5: Il Mazziere salta uno!"), 2000);
     }
