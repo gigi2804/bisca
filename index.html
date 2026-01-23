@@ -92,11 +92,27 @@
         
         .btn-secondary { background: #444; color: #ccc; border: 1px solid #666; font-size: 12px; padding: 8px; margin-top: 10px; width: auto;}
         
-        .btn-danger { background: #661111; color: white; border: 1px solid #ff4444; width: auto; font-size: 11px; padding: 6px 10px; position: absolute; top: 5px; left: 5px; z-index: 2000; }
+        /* BOTTONI IN GIOCO - FIX POSIZIONAMENTO */
+        .btn-danger { 
+            background: #661111; color: white; border: 1px solid #ff4444; 
+            width: auto; font-size: 11px; padding: 6px 10px; 
+            position: absolute; top: 5px; left: 5px; z-index: 2000; 
+        }
+        
+        /* BONUS CENTRALE */
+        #bonus-display { 
+            position: absolute; top: 5px; 
+            left: 50%; transform: translateX(-50%); /* CENTRATO PERFETTAMENTE */
+            z-index: 2000; font-size: 10px; padding: 5px 8px; 
+            background: rgba(0,0,0,0.7); border-radius: 6px; 
+            border: 1px solid #444; color: #fff; font-weight: bold; 
+            white-space: nowrap;
+        }
+
         .btn-restart { background: #111166; color: white; border: 1px solid #4444ff; width: auto; font-size: 11px; padding: 6px 10px; position: absolute; top: 35px; right: 5px; z-index: 2000; }
         
         #btn-pause { position: absolute; top: 5px; right: 5px; z-index: 2000; font-size: 10px; padding: 5px 8px; width: auto; background: rgba(255,255,255,0.1); border: 1px solid #777; color: #ccc; }
-        #bonus-display { position: absolute; top: 5px; left: 45px; z-index: 2000; font-size: 10px; padding: 5px 8px; background: rgba(0,0,0,0.7); border-radius: 6px; border: 1px solid #444; color: #fff; font-weight: bold; }
+        
         .bonus-active { color: #00ff00; border-color: #00ff00; }
         .bonus-used { color: #ff4444; border-color: #ff4444; }
         #pause-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.85); z-index: 3000; display: none; justify-content: center; align-items: center; color: gold; font-size: 30px; flex-direction: column; backdrop-filter: blur(5px); }
@@ -217,8 +233,6 @@
         let currentBlindCards = [];
         let currentTableState = [];
         let amISpectator = false;
-        
-        // Variabile per salvare la carta in attesa di decisione Asso
         let pendingCardIndex = null;
 
         socket.on('connect', () => { 
@@ -242,7 +256,6 @@
             document.querySelectorAll('.blind-card-display').forEach(e => e.remove());
             document.getElementById('my-hand').innerHTML = '';
             document.getElementById('seats-container').innerHTML = '';
-            // Chiudi modale se aperto
             document.getElementById('asso-modal').style.display = 'none';
         }
 
@@ -286,10 +299,8 @@
             if(!name || !roomName) return alert("Inserisci Nome e Stanza!");
             localStorage.setItem('bisca_username', name);
             localStorage.setItem('bisca_room', roomName);
-            
             isBlindModeActive = false;
             socket.emit('join', { name: name, roomName: roomName });
-            
             document.getElementById('login').style.display='none'; 
             document.getElementById('lobby').style.display='block';
             document.getElementById('chat-sidebar').style.display='flex';
@@ -302,18 +313,13 @@
         }
         function togglePause() { socket.emit('togglePause'); }
 
-        // --- NUOVA LOGICA PLAY E ASSO ---
         function play(idx, c) {
             if(!isMyTurn) return;
-            
-            // Se è Asso di Denari (valore 1)
             if (c && c.suit === 'denari' && c.value === 1) {
-                pendingCardIndex = idx; // Memorizza indice
-                document.getElementById('asso-modal').style.display = 'flex'; // Apri finestra
-                return; // Ferma tutto, aspetta click sul bottone
+                pendingCardIndex = idx; 
+                document.getElementById('asso-modal').style.display = 'flex'; 
+                return; 
             }
-            
-            // Giocata normale
             socket.emit('playCard', { cardIndex: idx, assoChoice: null });
         }
 
@@ -324,20 +330,15 @@
             }
             document.getElementById('asso-modal').style.display = 'none';
         }
-        // -------------------------------
 
         socket.on('backToLobby', () => {
             if (amISpectator) {
                 const choice = confirm("La partita è stata riavviata. Vuoi unirti alla prossima come giocatore?");
-                if (choice) {
-                    socket.emit('switchRole', true); 
-                } else {
-                    socket.emit('switchRole', false); 
-                }
+                if (choice) { socket.emit('switchRole', true); } 
+                else { socket.emit('switchRole', false); }
             } else {
                 alert("Partita finita/resettata! Ritorno alla Lobby.");
             }
-
             document.getElementById('game-area').style.display = 'none';
             document.getElementById('lobby').style.display = 'block';
             isBlindModeActive = false; currentBlindCards = [];
@@ -395,9 +396,7 @@
                 currentBlindCards = [];
                 document.querySelectorAll('.blind-card-display').forEach(e => e.remove());
             }
-
             if(isBlindModeActive && h.length > 0) return; 
-            
             switchToGameView();
             const div = document.getElementById('my-hand'); div.innerHTML='';
             h.forEach((c, i) => div.appendChild(renderCard(c, true, i)));
