@@ -35,17 +35,13 @@
             #app-wrapper { flex-direction: column; } 
             #game-area { height: 55%; width: 100%; }
             #chat-sidebar { width: 100%; height: 45%; border-left: none; border-top: 2px solid #d4af37; } 
-            .player-info { padding: 1px 3px !important; font-size: 9px !important; } 
+            .player-info { padding: 1px 3px !important; } 
         }
 
         #chat-header { padding: 5px; background: #d4af37; color: black; font-weight: bold; text-align: center; font-size: 12px; flex-shrink: 0;}
         #chat-messages { flex-grow: 1; overflow-y: auto; padding: 10px; font-size: 13px; display: flex; flex-direction: column; gap: 6px; background: #111;}
         
-        #chat-input-area { 
-            padding: 8px; background: #222; display: flex; gap: 5px; 
-            flex-shrink: 0; padding-bottom: max(8px, env(safe-area-inset-bottom)); 
-        }
-        
+        #chat-input-area { padding: 8px; background: #222; display: flex; gap: 5px; flex-shrink: 0; padding-bottom: max(8px, env(safe-area-inset-bottom)); }
         #chat-input { flex-grow: 1; padding: 10px; border: 1px solid #555; background: #333; color: white; border-radius: 4px; outline:none; font-size: 16px; }
         #chat-send { width: 50px; background: #d4af37; border: none; cursor: pointer; color: black; font-weight: bold; border-radius: 4px; font-size: 18px;}
         
@@ -54,34 +50,16 @@
         .msg-other { background: #444; align-self: flex-start; border-bottom-left-radius: 0; }
         .msg-name { font-size: 10px; color: #aaa; margin-bottom: 2px; font-weight: bold; }
 
-        #login { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(16, 16, 16, 0.98); padding: 30px; border: 2px solid #d4af37; z-index: 2000; text-align: center; border-radius: 15px; width: 85%; max-width: 320px; box-shadow: 0 0 50px rgba(0,0,0,0.8); }
+        #login, #lobby { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(16, 16, 16, 0.98); padding: 30px; border: 2px solid #d4af37; z-index: 2000; text-align: center; border-radius: 15px; width: 85%; max-width: 320px; box-shadow: 0 0 50px rgba(0,0,0,0.8); }
         
-        #lobby { 
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
-            background: rgba(16, 16, 16, 0.98); padding: 20px; border: 2px solid #d4af37; 
-            z-index: 2000; text-align: center; border-radius: 15px; width: 85%; max-width: 320px; 
-            box-shadow: 0 0 50px rgba(0,0,0,0.8); max-height: 80vh; overflow-y: auto; 
-        }
-        @media (max-width: 768px) {
-            #lobby { top: auto; bottom: 20px; left: 50%; transform: translateX(-50%); width: 90%; max-height: 50vh; }
-        }
+        /* Lobby in basso su mobile */
+        #lobby { padding: 20px; max-height: 80vh; overflow-y: auto; }
+        @media (max-width: 768px) { #lobby { top: auto; bottom: 20px; left: 50%; transform: translateX(-50%); width: 90%; max-height: 50vh; } }
 
-        /* --- STILE MODALE ASSO --- */
-        #asso-modal {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.85); z-index: 3000;
-            display: none; justify-content: center; align-items: center;
-            flex-direction: column; backdrop-filter: blur(5px);
-        }
-        #asso-box {
-            background: #222; border: 2px solid #d4af37; border-radius: 15px;
-            padding: 20px; text-align: center; width: 80%; max-width: 300px;
-            box-shadow: 0 0 30px rgba(212, 175, 55, 0.3);
-        }
-        .asso-btn {
-            width: 100%; padding: 15px; margin: 10px 0; font-size: 18px; font-weight: bold;
-            border-radius: 8px; cursor: pointer; border: none; transition: 0.2s;
-        }
+        /* MODALE ASSO */
+        #asso-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 3000; display: none; justify-content: center; align-items: center; flex-direction: column; backdrop-filter: blur(5px); }
+        #asso-box { background: #222; border: 2px solid #d4af37; border-radius: 15px; padding: 20px; text-align: center; width: 80%; max-width: 300px; box-shadow: 0 0 30px rgba(212, 175, 55, 0.3); }
+        .asso-btn { width: 100%; padding: 15px; margin: 10px 0; font-size: 18px; font-weight: bold; border-radius: 8px; cursor: pointer; border: none; transition: 0.2s; }
         .btn-high { background: #d4af37; color: black; }
         .btn-low { background: #444; color: white; border: 1px solid #777; }
         .btn-high:active, .btn-low:active { transform: scale(0.95); }
@@ -91,27 +69,10 @@
         button:active { transform: scale(0.98); }
         
         .btn-secondary { background: #444; color: #ccc; border: 1px solid #666; font-size: 12px; padding: 8px; margin-top: 10px; width: auto;}
-        
-        /* BOTTONI IN GIOCO - FIX POSIZIONAMENTO */
-        .btn-danger { 
-            background: #661111; color: white; border: 1px solid #ff4444; 
-            width: auto; font-size: 11px; padding: 6px 10px; 
-            position: absolute; top: 5px; left: 5px; z-index: 2000; 
-        }
-        
-        /* BONUS CENTRALE */
-        #bonus-display { 
-            position: absolute; top: 5px; 
-            left: 50%; transform: translateX(-50%); /* CENTRATO PERFETTAMENTE */
-            z-index: 2000; font-size: 10px; padding: 5px 8px; 
-            background: rgba(0,0,0,0.7); border-radius: 6px; 
-            border: 1px solid #444; color: #fff; font-weight: bold; 
-            white-space: nowrap;
-        }
-
+        .btn-danger { background: #661111; color: white; border: 1px solid #ff4444; width: auto; font-size: 11px; padding: 6px 10px; position: absolute; top: 5px; left: 5px; z-index: 2000; }
         .btn-restart { background: #111166; color: white; border: 1px solid #4444ff; width: auto; font-size: 11px; padding: 6px 10px; position: absolute; top: 35px; right: 5px; z-index: 2000; }
-        
         #btn-pause { position: absolute; top: 5px; right: 5px; z-index: 2000; font-size: 10px; padding: 5px 8px; width: auto; background: rgba(255,255,255,0.1); border: 1px solid #777; color: #ccc; }
+        #bonus-display { position: absolute; top: 5px; left: 50%; transform: translateX(-50%); z-index: 2000; font-size: 10px; padding: 5px 8px; background: rgba(0,0,0,0.7); border-radius: 6px; border: 1px solid #444; color: #fff; font-weight: bold; white-space: nowrap;}
         
         .bonus-active { color: #00ff00; border-color: #00ff00; }
         .bonus-used { color: #ff4444; border-color: #ff4444; }
@@ -123,17 +84,18 @@
         .active-turn .avatar { border-color: gold; box-shadow: 0 0 15px gold; transform: scale(1.15); }
         .eliminated-player { opacity: 0.5; filter: grayscale(100%); }
         
-        .player-info { 
-            background: rgba(0,0,0,0.9); 
-            padding: 4px 8px; 
-            border-radius: 6px; 
-            margin-top: 4px; 
-            border: 1px solid #555; 
-            color: #fff; 
-            white-space: nowrap; 
-            font-size: 13px !important; 
-            font-weight: bold;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        /* FONT INGRANDITO */
+        .player-info { background: rgba(0,0,0,0.9); padding: 4px 8px; border-radius: 6px; margin-top: 4px; border: 1px solid #555; color: #fff; white-space: nowrap; font-size: 16px !important; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+
+        /* MINI CARTE AVVERSARI */
+        .mini-card-container { display: flex; justify-content: center; margin-top: -10px; margin-bottom: 2px; }
+        .mini-card { 
+            width: 15px; height: 25px; 
+            background: repeating-linear-gradient(45deg, #2b3990, #2b3990 2px, #1a235a 2px, #1a235a 4px); 
+            border: 1px solid white; border-radius: 2px; margin: 0 1px; box-shadow: 0 1px 2px black;
+        }
+        @media (min-width: 769px) {
+            .mini-card { width: 30px; height: 45px; margin: 0 2px; } /* Più grandi su PC */
         }
 
         .played-card-slot { position: absolute; width: var(--card-width); height: var(--card-height); transform: translate(-50%, -50%); z-index: 5; transition: 0.3s;}
@@ -274,7 +236,14 @@
             const chatBox = document.getElementById('chat-messages');
             const div = document.createElement('div');
             div.className = (data.id === myId) ? 'msg msg-mine' : 'msg msg-other';
-            div.innerHTML = `<div class="msg-name">${data.name}</div>${data.text}`;
+            // SE IL MESSAGGIO E' DEL SISTEMA (ID "SYS")
+            if(data.id === "SYS") {
+                div.style.background = "transparent";
+                div.style.color = "#d4af37";
+                div.style.textAlign = "center";
+                div.style.border = "1px solid #d4af37";
+            }
+            div.innerHTML = (data.id !== "SYS" ? `<div class="msg-name">${data.name}</div>` : "") + data.text;
             chatBox.appendChild(div);
             chatBox.scrollTop = chatBox.scrollHeight;
         });
@@ -376,7 +345,7 @@
 
         socket.on('updatePlayers', d => {
             const list = d.list || d; 
-            document.getElementById('lobby-list').innerHTML = list.map(x=>x.name).join('<br>');
+            document.getElementById('lobby-list').innerHTML = list.map(x=>x.name + (x.isSpectator ? " (👁️)" : "")).join('<br>');
             if (d.isHost) { document.getElementById('host-controls').style.display = 'block'; document.getElementById('waiting-msg').style.display = 'none'; } 
             else { document.getElementById('host-controls').style.display = 'none'; document.getElementById('waiting-msg').style.display = 'block'; }
             renderTable(list);
@@ -402,15 +371,10 @@
             h.forEach((c, i) => div.appendChild(renderCard(c, true, i)));
         });
         
-        socket.on('tableUpdate', t => {
-            currentTableState = t; 
-            updateTable(t);
-        });
-
+        socket.on('tableUpdate', t => { currentTableState = t; updateTable(t); });
         socket.on('turnUpdate', d => updateTurn(d.playerId===myId, d.phase, d.roundCards));
         socket.on('gamePaused', p => document.getElementById('pause-overlay').style.display = p ? 'flex':'none');
         socket.on('statusMsg', m => document.getElementById('status-msg').innerHTML = m);
-        
         socket.on('trickResult', m => { 
             const el = document.getElementById('status-msg'); el.innerHTML=m; el.style.color='gold'; el.style.borderColor='gold';
             setTimeout(()=> { el.style.color='#eee'; el.style.borderColor='#d4af37'; }, 2000); 
@@ -434,7 +398,6 @@
             document.getElementById('my-hand').style.opacity = isMine ? 1 : 0.6;
             const c = document.getElementById('controls');
             if(amISpectator) { c.style.display='none'; return; }
-
             if(isMine && phase==='BIDDING') {
                 c.style.display='block'; const b=document.getElementById('bid-buttons'); b.innerHTML='';
                 for(let i=0; i<=(count||5); i++) {
@@ -472,10 +435,11 @@
                     let scommessa = p.lastBid !== null ? p.lastBid : '-';
                     let prese = p.lastWon;
                     stats = `❤️${p.lives} <span style="color:#ffff00">D:${scommessa}</span> <span style="color:#00ff00">F:${prese}</span>`;
-                } else {
-                    stats = `💀 OUT`;
-                }
+                } else { stats = `💀 OUT`; }
                 
+                // Icona Mazziere
+                let dealerIcon = p.isDealer ? `<span style="color:gold; margin-left:5px;">🃏</span>` : "";
+
                 let blindHTML = '';
                 if (isBlindModeActive && currentBlindCards.length > 0) {
                     const blindInfo = currentBlindCards.find(c => c.id === p.id);
@@ -486,9 +450,20 @@
                     }
                 }
 
+                // Generazione Mini-Carte
+                let handCardsHTML = "";
+                if(p.id !== myId && p.lives > 0 && p.handCount > 0) {
+                    handCardsHTML = `<div class="mini-card-container">`;
+                    for(let k=0; k<p.handCount; k++) {
+                        handCardsHTML += `<div class="mini-card"></div>`;
+                    }
+                    handCardsHTML += `</div>`;
+                }
+
                 div.innerHTML = `<div class="avatar">${p.name[0]}</div>
                                  ${blindHTML}
-                                 <div class="player-info"><div style="color:#fff; font-weight:bold;">${p.name}</div>${stats}</div>`;
+                                 ${handCardsHTML}
+                                 <div class="player-info"><div style="color:#fff; font-weight:bold;">${p.name} ${dealerIcon}</div>${stats}</div>`;
                 
                 const sx = 50 + 20*Math.cos(rad), sy = 50 + 20*Math.sin(rad);
                 const slot = document.createElement('div'); slot.id='slot-'+p.id; slot.className='played-card-slot';
