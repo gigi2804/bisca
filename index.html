@@ -52,7 +52,10 @@
 
         #felt { position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%); width: 94%; height: 65%; border: 6px solid #3d2b1f; background: #0d5226; border-radius: 80px; box-shadow: inset 0 0 50px rgba(0,0,0,0.7); }
         .player-seat { position: absolute; width: 90px; height: 80px; transform: translate(-50%, -50%); text-align: center; font-size: 12px; transition: 0.5s; z-index: 10; display: flex; flex-direction: column; align-items: center;}
-        .avatar { width: var(--avatar-size); height: var(--avatar-size); background: #222; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid #666; font-size: 14px; font-weight: bold; box-shadow: 0 3px 6px rgba(0,0,0,0.5);}
+        
+        /* FIX: Flex-shrink 0 impedisce all'avatar di diventare ovale */
+        .avatar { width: var(--avatar-size); height: var(--avatar-size); background: #222; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid #666; font-size: 14px; font-weight: bold; box-shadow: 0 3px 6px rgba(0,0,0,0.5); flex-shrink: 0; }
+        
         .active-turn .avatar { border-color: gold; box-shadow: 0 0 15px gold; transform: scale(1.15); }
         .eliminated-player { opacity: 0.5; filter: grayscale(100%); }
         .player-info { background: rgba(0,0,0,0.9); padding: 4px 8px; border-radius: 6px; margin-top: 4px; border: 1px solid #555; color: #fff; white-space: nowrap; font-size: 16px !important; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.5); }
@@ -82,6 +85,9 @@
         #spectator-area { margin-top: 20px; padding-top: 15px; border-top: 1px solid #444; }
         .btn-join { background: #006400; color: white; border: 1px solid #00ff00; padding: 15px; width: 90%; font-size: 14px; margin-top: 5px; animation: pulse 2s infinite; }
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+        
+        /* Fallback CSS per carte */
+        .card-css { width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background:#eee; color:#000; border:1px solid #999; }
     </style>
 </head>
 <body>
@@ -128,7 +134,7 @@
 
     <div id="login">
         <h2 style="color:#d4af37; margin-top:0;">BISCA ONLINE</h2>
-        <input id="username" placeholder="Tuo Nome" maxlength="10">
+        <input id="username" placeholder="Tuo Nome" maxlength="12">
         <input id="roomname" placeholder="Nome Stanza (es. Pizza)" maxlength="15">
         <button onclick="join()">ENTRA</button>
     </div>
@@ -188,8 +194,6 @@
 
         socket.on('warning', (msg) => { alert(msg); });
         socket.on('errorMsg', (msg) => { alert(msg); resetToLogin(); });
-        
-        // NUOVO: KICK FORZATO (Se il server mi butta fuori dopo 30s)
         socket.on('forceKick', () => { alert("Sei stato rimosso per inattività."); resetToLogin(); });
 
         function resetToLogin() {
@@ -205,21 +209,7 @@
         }
 
         function changeRoom() { socket.emit('leaveRoom'); resetToLogin(); }
-        
-        // --- NUOVA LOGICA ABBANDONO ---
-        function leaveGame() {
-            if (confirm("Sei sicuro di voler abbandonare? Perderai tutte le vite.")) {
-                if (confirm("Vuoi rimanere nel tavolo come SPETTATORE?")) {
-                    // Rimane in stanza, server lo segna spettatore
-                    socket.emit('leaveGame', { staySpectator: true });
-                } else {
-                    // Esce del tutto
-                    socket.emit('leaveGame', { staySpectator: false });
-                    resetToLogin();
-                }
-            }
-        }
-        
+        function leaveGame() { if(confirm("Sei sicuro di voler abbandonare?")) { if (confirm("Vuoi rimanere nel tavolo come SPETTATORE?")) { socket.emit('leaveGame', { staySpectator: true }); } else { socket.emit('leaveGame', { staySpectator: false }); resetToLogin(); } } }
         function voteRestart() { socket.emit('voteRestart'); }
         function joinGameFromLobby() { socket.emit('switchRole', true); }
 
@@ -239,13 +229,19 @@
             chatBox.appendChild(div); chatBox.scrollTop = chatBox.scrollHeight;
         });
 
+        // FIX: RENDER CARD CON FALLBACK (Se l'immagine non carica, mostra il CSS)
         function renderCard(c, isHand, idx, isBack = false) {
             const div = document.createElement('div');
             div.className = isHand ? 'card hand-card' : 'card table-card';
-            if (isBack) { div.className += ' card-back'; } else {
+            if (isBack) {
+                div.className += ' card-back';
+            } else {
                 const sMap = {'denari':'d', 'coppe':'c', 'spade':'s', 'bastoni':'b'};
                 const imgSrc = `${CARTELLE_LOCALE}${c.value}${sMap[c.suit]}${ESTENSIONE}`;
-                div.innerHTML = `<img src="${imgSrc}" onerror="this.style.display='none'"><div class="card-css" style="display:none;color:black;padding-top:20px;font-size:10px;">${c.value}<br>${c.suit}</div>`;
+                div.innerHTML = `
+                    <img src="${imgSrc}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
+                    <div class="card-css" style="display:none;color:black;padding-top:20px;font-size:10px;">${c.value}<br>${c.suit}</div>
+                `;
             }
             if(isHand) div.onclick = () => play(idx, c);
             return div;
@@ -281,10 +277,7 @@
         }
 
         socket.on('backToLobby', () => {
-            if (amISpectator) {
-                const choice = confirm("La partita è stata riavviata. Vuoi unirti alla prossima come giocatore?");
-                if (choice) { socket.emit('switchRole', true); } else { socket.emit('switchRole', false); }
-            } else { alert("Partita finita/resettata! Ritorno alla Lobby."); }
+            if (amISpectator) { const choice = confirm("La partita è stata riavviata. Vuoi unirti alla prossima come giocatore?"); if (choice) { socket.emit('switchRole', true); } else { socket.emit('switchRole', false); } } else { alert("Partita finita/resettata! Ritorno alla Lobby."); }
             document.getElementById('game-area').style.display = 'none'; document.getElementById('lobby').style.display = 'block';
             isBlindModeActive = false; currentBlindCards = []; currentTableState = [];
             document.getElementById('my-hand').innerHTML = ''; document.getElementById('seats-container').innerHTML = '';
@@ -295,13 +288,34 @@
         socket.on('blindRoundInfo', (allCards) => { isBlindModeActive = true; currentBlindCards = allCards; });
         socket.on('clearBlindCards', () => { isBlindModeActive = false; currentBlindCards = []; });
 
-        socket.on('reconnectData', d => { switchToGameView(); updateBonusUI(d.bonusInfo); if(d.gameState==="PAUSED") document.getElementById('pause-overlay').style.display='flex'; renderTable(d.players); updateHand(d.hand); updateTable(d.table); updateTurn(d.isMyTurn, d.phase, d.roundCards); });
+        // FIX: RICONNESSIONE ROBUSTA
+        socket.on('reconnectData', d => { 
+            isBlindModeActive = false; 
+            switchToGameView(); 
+            updateBonusUI(d.bonusInfo); 
+            if(d.gameState==="PAUSED") document.getElementById('pause-overlay').style.display='flex'; 
+            renderTable(d.players); 
+            
+            const handDiv = document.getElementById('my-hand'); 
+            handDiv.innerHTML = '';
+            if(d.hand && d.hand.length > 0) {
+                d.hand.forEach((c, i) => handDiv.appendChild(renderCard(c, true, i)));
+            }
+            handDiv.style.opacity = 1; 
+            updateTable(d.table); 
+            
+            if (d.players && d.players[d.currentPlayerIndex]) {
+                 window.activeId = d.players[d.currentPlayerIndex].id;
+            } else if (d.isMyTurn) {
+                 window.activeId = myId;
+            }
+            updateTurn(d.isMyTurn, d.phase, d.roundCards); 
+        });
 
         function switchToGameView() { document.getElementById('login').style.display='none'; document.getElementById('lobby').style.display='none'; document.getElementById('game-area').style.display='block'; document.getElementById('btn-pause').style.display='block'; document.getElementById('bonus-display').style.display='block'; document.getElementById('chat-sidebar').style.display='flex'; }
 
         socket.on('updatePlayers', d => {
-            const list = d.list || d; const me = list.find(p => p.id === myId); if(me) amISpectator = me.isSpectator;
-            document.getElementById('lobby-list').innerHTML = list.map(x=>x.name + (x.isSpectator ? " (👁️)" : "")).join('<br>');
+            const list = d.list || d; document.getElementById('lobby-list').innerHTML = list.map(x=>x.name + (x.isSpectator ? " (👁️)" : "")).join('<br>');
             if (d.isHost) { document.getElementById('host-controls').style.display = 'block'; document.getElementById('waiting-msg').style.display = 'none'; } else { document.getElementById('host-controls').style.display = 'none'; document.getElementById('waiting-msg').style.display = 'block'; }
             if (amISpectator) { document.getElementById('spectator-area').style.display = 'block'; } else { document.getElementById('spectator-area').style.display = 'none'; }
             renderTable(list); updateTable(currentTableState);
@@ -317,7 +331,18 @@
         });
         
         socket.on('tableUpdate', t => { currentTableState = t; updateTable(t); });
-        socket.on('turnUpdate', d => updateTurn(d.playerId===myId, d.phase, d.roundCards));
+        
+        // FIX: HIGHLIGHT GIALLO ATTIVO
+        socket.on('turnUpdate', d => { 
+            window.activeId = d.playerId; 
+            updateTurn(d.playerId===myId, d.phase, d.roundCards); 
+            const allPlayers = document.querySelectorAll('.player-seat');
+            allPlayers.forEach(seat => {
+                if(seat.getAttribute('data-playerid') === d.playerId) seat.classList.add('active-turn');
+                else seat.classList.remove('active-turn');
+            });
+        });
+        
         socket.on('gamePaused', p => document.getElementById('pause-overlay').style.display = p ? 'flex':'none');
         socket.on('statusMsg', m => document.getElementById('status-msg').innerHTML = m);
         socket.on('trickResult', m => { const el = document.getElementById('status-msg'); el.innerHTML=m; el.style.color='gold'; el.style.borderColor='gold'; setTimeout(()=> { el.style.color='#eee'; el.style.borderColor='#d4af37'; }, 2000); });
@@ -329,7 +354,6 @@
             isMyTurn = isMine; document.getElementById('my-hand').style.opacity = isMine ? 1 : 0.6; const c = document.getElementById('controls');
             if(amISpectator) { c.style.display='none'; return; }
             if(isMine && phase==='BIDDING') { c.style.display='block'; const b=document.getElementById('bid-buttons'); b.innerHTML=''; for(let i=0; i<=(count||5); i++) { let btn = document.createElement('button'); btn.innerText=i; btn.onclick = () => { socket.emit('placeBid', i); }; b.appendChild(btn); } } else c.style.display='none';
-            document.querySelectorAll('.player-seat').forEach(s => s.classList.remove('active-turn'));
         }
 
         function renderTable(players) {
@@ -350,16 +374,32 @@
                 div.style.left=cx+'%'; div.style.top=cy+'%';
                 div.setAttribute('data-playerid', p.id); 
                 
+                let dealerIcon = p.isDealer ? `<span style="color:gold; margin-left:5px;">🃏</span>` : "";
                 let stats = '';
                 if (p.isSpectator) { stats = `<span style="color:#aaa;">SPETTATORE</span>`; } 
                 else if (p.lives > 0) { let scommessa = p.lastBid !== null ? p.lastBid : '-'; let prese = p.lastWon; stats = `❤️${p.lives} <span style="color:#ffff00">D:${scommessa}</span> <span style="color:#00ff00">F:${prese}</span>`; } 
                 else { stats = `💀 OUT`; }
-                let dealerIcon = p.isDealer ? `<span style="color:gold; margin-left:5px;">🃏</span>` : "";
+
                 let blindHTML = '';
                 if (isBlindModeActive && currentBlindCards.length > 0) { const blindInfo = currentBlindCards.find(c => c.id === p.id); if (blindInfo && blindInfo.card && p.id !== myId && p.lives > 0) { const sMap = {'denari':'d', 'coppe':'c', 'spade':'s', 'bastoni':'b'}; const src = `${CARTELLE_LOCALE}${blindInfo.card.value}${sMap[blindInfo.card.suit]}${ESTENSIONE}`; blindHTML = `<div class="blind-card-display"><img src="${src}"></div>`; } }
+                
                 let handCardsHTML = "";
                 if(p.id !== myId && p.lives > 0 && p.handCount > 0) { handCardsHTML = `<div class="mini-card-container">`; for(let k=0; k<p.handCount; k++) { handCardsHTML += `<div class="mini-card"></div>`; } handCardsHTML += `</div>`; }
-                div.innerHTML = `<div class="avatar">${p.name[0]}</div> ${blindHTML} ${handCardsHTML} <div class="player-info"><div style="color:#fff; font-weight:bold;">${p.name} ${dealerIcon}</div>${stats}</div>`;
+                
+                // FIX: LAYOUT BOX ALTO (A SINISTRA)
+                let infoStyle = "";
+                if (cy < 35) {
+                    infoStyle = "position: absolute; right: 100%; top: 50%; transform: translateY(-50%); margin-right: 10px; margin-top: 0;";
+                }
+
+                div.innerHTML = `
+                    <div class="avatar">${p.name[0]}</div> 
+                    ${blindHTML} 
+                    ${handCardsHTML} 
+                    <div class="player-info" style="${infoStyle}">
+                        <div style="color:#fff; font-weight:bold;">${p.name} ${dealerIcon}</div>${stats}
+                    </div>`;
+                
                 const sx = 50 + 20*Math.cos(rad), sy = 50 + 20*Math.sin(rad);
                 const slot = document.createElement('div'); slot.id='slot-'+p.id; slot.className='played-card-slot';
                 slot.style.left=sx+'%'; slot.style.top=sy+'%';
