@@ -82,11 +82,30 @@
         #spectator-area { margin-top: 20px; padding-top: 15px; border-top: 1px solid #444; }
         .btn-join { background: #006400; color: white; border: 1px solid #00ff00; padding: 15px; width: 90%; font-size: 14px; margin-top: 5px; animation: pulse 2s infinite; }
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+        
+        /* AD OVERLAY */
+        #ad-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #111; z-index: 5000; display: flex; justify-content: center; align-items: center; flex-direction: column; }
+        .ad-content { text-align: center; width: 90%; max-width: 400px; }
+        #ad-placeholder { width: 100%; height: 250px; background: #222; border: 1px dashed #444; margin-bottom: 20px; display: flex; justify-content: center; align-items: center; }
+        #btn-skip-ad { background: #444; color: #888; cursor: not-allowed; transition: 0.3s; }
+        #btn-skip-ad.active { background: #d4af37; color: black; cursor: pointer; animation: pulse 2s infinite; }
+        
+        /* Fallback CSS per carte */
+        .card-css { width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background:#eee; color:#000; border:1px solid #999; }
     </style>
 </head>
 <body>
     <div id="pause-overlay">PAUSA<br><button style="width:auto; margin-top:20px; font-size:14px;" onclick="togglePause()">RIPRENDI</button></div>
     
+    <div id="ad-overlay">
+        <div class="ad-content">
+            <h1 style="color:#d4af37; margin-bottom: 10px;">BISCA PRO</h1>
+            <p style="color:#ccc; font-size:14px; margin-bottom: 20px;">Il gioco sta per iniziare...</p>
+            <div id="ad-placeholder"><div style="color:#666; padding-top:100px;">SPAZIO PER ANNUNCI<br>O "OFFRIMI UN CAFFÈ"</div></div>
+            <button id="btn-skip-ad" onclick="closeAd()" disabled>Attendi <span id="ad-countdown">5</span>s...</button>
+        </div>
+    </div>
+
     <audio id="bg-music" loop><source src="/music.mp3" type="audio/mpeg"></audio>
 
     <div id="asso-modal">
@@ -128,8 +147,8 @@
 
     <div id="login">
         <h2 style="color:#d4af37; margin-top:0;">BISCA ONLINE</h2>
-        <input id="username" placeholder="Tuo Nome" maxlength="20">
-        <input id="roomname" placeholder="Nome Stanza (es. Pizza)" maxlength="20">
+        <input id="username" placeholder="Tuo Nome" maxlength="12">
+        <input id="roomname" placeholder="Nome Stanza (es. Pizza)" maxlength="15">
         <button onclick="join()">ENTRA</button>
     </div>
     
@@ -180,6 +199,22 @@
             if (audio.paused) { audio.volume = 0.3; audio.play().then(() => { btn.innerText = "🔊"; musicPlaying = true; }).catch(e => console.log(e)); } else { audio.pause(); btn.innerText = "🔇"; musicPlaying = false; }
         }
 
+        // AD LOGIC
+        document.addEventListener("DOMContentLoaded", () => {
+            if (sessionStorage.getItem('ad_seen')) { document.getElementById('ad-overlay').style.display = 'none'; return; }
+            let seconds = 5;
+            const countSpan = document.getElementById('ad-countdown');
+            const btn = document.getElementById('btn-skip-ad');
+            const timer = setInterval(() => {
+                seconds--; countSpan.innerText = seconds;
+                if (seconds <= 0) { clearInterval(timer); btn.removeAttribute('disabled'); btn.classList.add('active'); btn.innerHTML = "VAI AL GIOCO ➤"; }
+            }, 1000);
+        });
+        function closeAd() {
+            const overlay = document.getElementById('ad-overlay'); overlay.style.opacity = '0'; overlay.style.transition = 'opacity 0.5s';
+            setTimeout(() => { overlay.style.display = 'none'; sessionStorage.setItem('ad_seen', 'true'); }, 500);
+        }
+
         socket.on('connect', () => { 
             myId = socket.id; 
             if(localStorage.getItem('bisca_username')) document.getElementById('username').value = localStorage.getItem('bisca_username');
@@ -188,8 +223,6 @@
 
         socket.on('warning', (msg) => { alert(msg); });
         socket.on('errorMsg', (msg) => { alert(msg); resetToLogin(); });
-        
-        // NUOVO: KICK FORZATO (Se il server mi butta fuori dopo 30s)
         socket.on('forceKick', () => { alert("Sei stato rimosso per inattività."); resetToLogin(); });
 
         function resetToLogin() {
@@ -205,21 +238,7 @@
         }
 
         function changeRoom() { socket.emit('leaveRoom'); resetToLogin(); }
-        
-        // --- NUOVA LOGICA ABBANDONO ---
-        function leaveGame() {
-            if (confirm("Sei sicuro di voler abbandonare? Perderai tutte le vite.")) {
-                if (confirm("Vuoi rimanere nel tavolo come SPETTATORE?")) {
-                    // Rimane in stanza, server lo segna spettatore
-                    socket.emit('leaveGame', { staySpectator: true });
-                } else {
-                    // Esce del tutto
-                    socket.emit('leaveGame', { staySpectator: false });
-                    resetToLogin();
-                }
-            }
-        }
-        
+        function leaveGame() { if(confirm("Sei sicuro di voler abbandonare?")) { if (confirm("Vuoi rimanere nel tavolo come SPETTATORE?")) { socket.emit('leaveGame', { staySpectator: true }); } else { socket.emit('leaveGame', { staySpectator: false }); resetToLogin(); } } }
         function voteRestart() { socket.emit('voteRestart'); }
         function joinGameFromLobby() { socket.emit('switchRole', true); }
 
@@ -239,13 +258,19 @@
             chatBox.appendChild(div); chatBox.scrollTop = chatBox.scrollHeight;
         });
 
+        // --- RENDER CARD (No Preload, con Fallback) ---
         function renderCard(c, isHand, idx, isBack = false) {
             const div = document.createElement('div');
             div.className = isHand ? 'card hand-card' : 'card table-card';
-            if (isBack) { div.className += ' card-back'; } else {
+            if (isBack) {
+                div.className += ' card-back';
+            } else {
                 const sMap = {'denari':'d', 'coppe':'c', 'spade':'s', 'bastoni':'b'};
                 const imgSrc = `${CARTELLE_LOCALE}${c.value}${sMap[c.suit]}${ESTENSIONE}`;
-                div.innerHTML = `<img src="${imgSrc}" onerror="this.style.display='none'"><div class="card-css" style="display:none;color:black;padding-top:20px;font-size:10px;">${c.value}<br>${c.suit}</div>`;
+                div.innerHTML = `
+                    <img src="${imgSrc}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
+                    <div class="card-css" style="display:none;color:black;padding-top:20px;font-size:10px;">${c.value}<br>${c.suit}</div>
+                `;
             }
             if(isHand) div.onclick = () => play(idx, c);
             return div;
@@ -281,10 +306,7 @@
         }
 
         socket.on('backToLobby', () => {
-            if (amISpectator) {
-                const choice = confirm("La partita è stata riavviata. Vuoi unirti alla prossima come giocatore?");
-                if (choice) { socket.emit('switchRole', true); } else { socket.emit('switchRole', false); }
-            } else { alert("Partita finita/resettata! Ritorno alla Lobby."); }
+            if (amISpectator) { const choice = confirm("La partita è stata riavviata. Vuoi unirti alla prossima come giocatore?"); if (choice) { socket.emit('switchRole', true); } else { socket.emit('switchRole', false); } } else { alert("Partita finita/resettata! Ritorno alla Lobby."); }
             document.getElementById('game-area').style.display = 'none'; document.getElementById('lobby').style.display = 'block';
             isBlindModeActive = false; currentBlindCards = []; currentTableState = [];
             document.getElementById('my-hand').innerHTML = ''; document.getElementById('seats-container').innerHTML = '';
@@ -295,15 +317,31 @@
         socket.on('blindRoundInfo', (allCards) => { isBlindModeActive = true; currentBlindCards = allCards; });
         socket.on('clearBlindCards', () => { isBlindModeActive = false; currentBlindCards = []; });
 
-        socket.on('reconnectData', d => { switchToGameView(); updateBonusUI(d.bonusInfo); if(d.gameState==="PAUSED") document.getElementById('pause-overlay').style.display='flex'; renderTable(d.players); updateHand(d.hand); updateTable(d.table); updateTurn(d.isMyTurn, d.phase, d.roundCards); });
+        // FIX RICONNESSIONE POTENZIATO
+        socket.on('reconnectData', d => { 
+            isBlindModeActive = false; 
+            switchToGameView(); 
+            updateBonusUI(d.bonusInfo); 
+            if(d.gameState==="PAUSED") document.getElementById('pause-overlay').style.display='flex'; 
+            renderTable(d.players); 
+            
+            const handDiv = document.getElementById('my-hand'); 
+            handDiv.innerHTML = '';
+            // Forza rendering mano se esistono carte
+            if(d.hand && d.hand.length > 0) {
+                d.hand.forEach((c, i) => handDiv.appendChild(renderCard(c, true, i)));
+            }
+            handDiv.style.opacity = 1; // Assicura che non sia trasparente
+            
+            updateTable(d.table); 
+            updateTurn(d.isMyTurn, d.phase, d.roundCards); 
+        });
 
         function switchToGameView() { document.getElementById('login').style.display='none'; document.getElementById('lobby').style.display='none'; document.getElementById('game-area').style.display='block'; document.getElementById('btn-pause').style.display='block'; document.getElementById('bonus-display').style.display='block'; document.getElementById('chat-sidebar').style.display='flex'; }
 
         socket.on('updatePlayers', d => {
-            const list = d.list || d; const me = list.find(p => p.id === myId); if(me) amISpectator = me.isSpectator;
-            document.getElementById('lobby-list').innerHTML = list.map(x=>x.name + (x.isSpectator ? " (👁️)" : "")).join('<br>');
+            const list = d.list || d; document.getElementById('lobby-list').innerHTML = list.map(x=>x.name + (x.isSpectator ? " (👁️)" : "")).join('<br>');
             if (d.isHost) { document.getElementById('host-controls').style.display = 'block'; document.getElementById('waiting-msg').style.display = 'none'; } else { document.getElementById('host-controls').style.display = 'none'; document.getElementById('waiting-msg').style.display = 'block'; }
-            if (amISpectator) { document.getElementById('spectator-area').style.display = 'block'; } else { document.getElementById('spectator-area').style.display = 'none'; }
             renderTable(list); updateTable(currentTableState);
         });
 
@@ -350,6 +388,13 @@
                 div.style.left=cx+'%'; div.style.top=cy+'%';
                 div.setAttribute('data-playerid', p.id); 
                 
+                if (cy < 35) {
+                    div.style.flexDirection = 'row';
+                    div.style.alignItems = 'center';
+                    div.style.justifyContent = 'center';
+                    div.style.gap = '8px';
+                }
+
                 let stats = '';
                 if (p.isSpectator) { stats = `<span style="color:#aaa;">SPETTATORE</span>`; } 
                 else if (p.lives > 0) { let scommessa = p.lastBid !== null ? p.lastBid : '-'; let prese = p.lastWon; stats = `❤️${p.lives} <span style="color:#ffff00">D:${scommessa}</span> <span style="color:#00ff00">F:${prese}</span>`; } 
