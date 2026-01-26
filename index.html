@@ -53,7 +53,6 @@
         #felt { position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%); width: 94%; height: 65%; border: 6px solid #3d2b1f; background: #0d5226; border-radius: 80px; box-shadow: inset 0 0 50px rgba(0,0,0,0.7); }
         .player-seat { position: absolute; width: 90px; height: 80px; transform: translate(-50%, -50%); text-align: center; font-size: 12px; transition: 0.5s; z-index: 10; display: flex; flex-direction: column; align-items: center;}
         
-        /* Avatar FIX */
         .avatar { width: var(--avatar-size); height: var(--avatar-size); background: #222; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid #666; font-size: 14px; font-weight: bold; box-shadow: 0 3px 6px rgba(0,0,0,0.5); flex-shrink: 0; }
         
         .active-turn .avatar { border-color: gold; box-shadow: 0 0 15px gold; transform: scale(1.15); }
@@ -79,7 +78,6 @@
         #center-status { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; width: 95%; pointer-events: none; z-index: 500; }
         #status-msg { font-size: 14px; font-weight: bold; color: #eee; text-shadow: 0 2px 4px black; background: rgba(0,0,0,0.8); padding: 8px 12px; border-radius: 10px; display: inline-block; line-height: 1.4; border: 1px solid #d4af37;}
         
-        /* Bid Buttons FIX */
         #controls { position: absolute; top: 60%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.9); padding: 8px 12px; border: 1px solid gold; border-radius:10px; display: none; text-align: center; z-index: 1500; pointer-events: auto;}
         #bid-buttons { display: flex; gap: 5px; justify-content: center; flex-wrap: wrap;}
         #bid-buttons button { width: 32px; height: 32px; border-radius: 50%; font-size: 14px; margin: 0;}
@@ -88,13 +86,11 @@
         .btn-join { background: #006400; color: white; border: 1px solid #00ff00; padding: 15px; width: 90%; font-size: 14px; margin-top: 5px; animation: pulse 2s infinite; }
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
         
-        /* Fallback CSS per carte */
-        .card-css { width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background:#eee; color:#000; border:1px solid #999;}
+        .card-css { width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background:#eee; color:#000; border:1px solid #999; }
     </style>
 </head>
 <body>
     <div id="pause-overlay">PAUSA<br><button style="width:auto; margin-top:20px; font-size:14px;" onclick="togglePause()">RIPRENDI</button></div>
-    
     <audio id="bg-music" loop><source src="/music.mp3" type="audio/mpeg"></audio>
 
     <div id="asso-modal">
@@ -145,12 +141,10 @@
         <h3 style="color:#d4af37; margin-top:0;">SALA D'ATTESA</h3>
         <div id="room-title" style="color:#888; font-size:12px; margin-bottom:10px;"></div>
         <div id="lobby-list" style="color:#ccc; margin-bottom:15px; min-height:50px;"></div>
-        
         <div id="spectator-area" style="display:none;">
             <p style="font-size:12px; color:#aaa; margin-bottom:5px;">Sei in modalità Spettatore</p>
             <button class="btn-join" onclick="joinGameFromLobby()">UNISCITI ALLA PARTITA 🃏</button>
         </div>
-
         <div id="host-controls" style="display:none; text-align:left; background:rgba(0,0,0,0.3); padding:10px; border-radius:8px; margin-top:15px;">
             <label>Vite Iniziali:</label>
             <select id="opt-lives">
@@ -164,7 +158,6 @@
             <button onclick="start()" style="margin-top:15px;">INIZIA PARTITA</button>
         </div>
         <div id="waiting-msg" style="color:#888; font-size:12px; margin-top:10px;">In attesa dell'Host...</div>
-        
         <button class="btn-secondary" onclick="changeRoom()">🔙 CAMBIA STANZA</button>
     </div>
 
@@ -172,7 +165,7 @@
     <script>
         const socket = io();
         let myId = null, isMyTurn = false;
-        window.activeId = null; // Gestione turno attivo
+        window.activeId = null; 
         
         const ESTENSIONE = ".jpg"; 
         const CARTELLE_LOCALE = "/carte/";
@@ -232,11 +225,12 @@
             chatBox.appendChild(div); chatBox.scrollTop = chatBox.scrollHeight;
         });
 
-        // Render Card con Fallback automatico
         function renderCard(c, isHand, idx, isBack = false) {
             const div = document.createElement('div');
             div.className = isHand ? 'card hand-card' : 'card table-card';
-            if (isBack) { div.className += ' card-back'; } else {
+            if (isBack) {
+                div.className += ' card-back';
+            } else {
                 const sMap = {'denari':'d', 'coppe':'c', 'spade':'s', 'bastoni':'b'};
                 const imgSrc = `${CARTELLE_LOCALE}${c.value}${sMap[c.suit]}${ESTENSIONE}`;
                 div.innerHTML = `<img src="${imgSrc}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'"><div class="card-css" style="display:none;color:black;padding-top:20px;font-size:10px;">${c.value}<br>${c.suit}</div>`;
@@ -291,10 +285,7 @@
             switchToGameView(); 
             updateBonusUI(d.bonusInfo); 
             if(d.gameState==="PAUSED") document.getElementById('pause-overlay').style.display='flex'; 
-            
-            // Turno in riconnessione
             window.activeId = (d.players && d.players[d.currentPlayerIndex]) ? d.players[d.currentPlayerIndex].id : null;
-            
             renderTable(d.players); 
             const handDiv = document.getElementById('my-hand'); 
             handDiv.innerHTML = '';
@@ -324,11 +315,9 @@
         });
         
         socket.on('tableUpdate', t => { currentTableState = t; updateTable(t); });
-        
         socket.on('turnUpdate', d => { 
             window.activeId = d.playerId; 
             updateTurn(d.playerId===myId, d.phase, d.roundCards); 
-            // Aggiorna l'evidenziatore senza rifare tutto il tavolo
             document.querySelectorAll('.player-seat').forEach(seat => {
                 if(seat.getAttribute('data-playerid') === d.playerId) seat.classList.add('active-turn');
                 else seat.classList.remove('active-turn');
@@ -384,9 +373,10 @@
                 let handCardsHTML = "";
                 if(p.id !== myId && p.lives > 0 && p.handCount > 0) { handCardsHTML = `<div class="mini-card-container">`; for(let k=0; k<p.handCount; k++) { handCardsHTML += `<div class="mini-card"></div>`; } handCardsHTML += `</div>`; }
                 
-                // Layout FIX: Box a sinistra solo se è nella parte alta del tavolo
+                // --- FIX LAYOUT: Box a sinistra SOLO se in alto AL CENTRO ---
                 let infoStyle = "";
-                if (cy < 35) {
+                // Applica solo se cy è molto basso (alto) e cx è centrale (tra 40 e 60)
+                if (cy < 25 && cx > 40 && cx < 60) {
                     infoStyle = "position: absolute; right: 105%; top: 50%; transform: translateY(-50%); margin-top: 0;";
                 }
 
