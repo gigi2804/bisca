@@ -13,12 +13,11 @@ app.use('/carte', express.static(path.join(__dirname, 'carte')));
 
 app.get('/', (req, res) => { res.sendFile(__dirname + '/index.html'); });
 
-console.log("SERVER AVVIATO: Versione Stabile (Fix Variabili)");
+console.log("SERVER AVVIATO: Fix Messaggi Chat vs Tavolo");
 
 const rooms = {}; 
 const SUITS = ['denari', 'coppe', 'spade', 'bastoni'];
 
-// --- FUNZIONI HELPER ---
 function createRoomState() {
     return {
         players: [], deck: [], tableCards: [],
@@ -40,21 +39,12 @@ function createDeck() {
   SUITS.forEach(suit => { for (let i = 1; i <= 10; i++) d.push({ suit, value: i, id: `${suit}-${i}` }); });
   return d;
 }
-
-function shuffle(arr) { 
-    for (let i = arr.length - 1; i > 0; i--) { 
-        const j = Math.floor(Math.random() * (i + 1)); 
-        [arr[i], arr[j]] = [arr[j], arr[i]]; 
-    } 
-    return arr; 
-}
-
+function shuffle(arr) { for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; } return arr; }
 function getCardPower(c, isAssoHigh) {
   if (c.suit === 'denari' && c.value === 1) return isAssoHigh ? 9999 : -1;
   let p = c.suit === 'denari' ? 400 : c.suit === 'coppe' ? 300 : c.suit === 'spade' ? 200 : 100;
   return p + c.value;
 }
-
 function getNextAliveIndex(curr, players) {
     if(!players || players.length === 0) return 0;
     let next = (curr + 1) % players.length;
@@ -66,44 +56,7 @@ function getNextAliveIndex(curr, players) {
     return next;
 }
 
-function broadcastUpdate(roomName) {
-    const room = rooms[roomName];
-    if(!room) return;
-    room.players.forEach(p => {
-        io.to(p.id).emit('updatePlayers', {
-            list: room.players.map((pl, idx) => ({ 
-                id: pl.id, 
-                name: pl.name, 
-                lives: pl.lives, 
-                lastBid: pl.bid, 
-                lastWon: pl.tricksWon, 
-                isSpectator: pl.isSpectator,
-                isDealer: (idx === room.dealerIndex), 
-                handCount: pl.hand.length
-            })),
-            isHost: (room.players.length > 0 && room.players[0].id === p.id) 
-        });
-    });
-}
-
-function updateGameState(roomName, force) { 
-    const r = rooms[roomName]; 
-    if(!r) return;
-    if (r.gameState === "PAUSED") return; 
-    
-    if(force) r.gameState=force; 
-    else if (!r.players[r.firstPlayerIndex] || r.players[r.firstPlayerIndex].bid === null) r.gameState = "BIDDING"; 
-    else r.gameState = "PLAYING"; 
-    
-    let msg = r.gameState === "BIDDING" ? `Scommetti: ${r.players[r.currentPlayerIndex].name}` : `Gioca: ${r.players[r.currentPlayerIndex].name}`; 
-    io.to(roomName).emit('statusMsg', msg); 
-    io.to(roomName).emit('turnUpdate', { playerId: r.players[r.currentPlayerIndex].id, phase: r.gameState, roundCards: r.roundCardsCount }); 
-}
-
-// --- LOGICA DI GIOCO ---
-
 io.on('connection', (socket) => {
-  
   socket.on('disconnect', () => { handleLeave(socket, true); });
   socket.on('leaveRoom', () => { handleLeave(socket, false); });
 
@@ -124,39 +77,36 @@ io.on('connection', (socket) => {
           const index = room.players.findIndex(x => x.id === sock.id);
 
           if (index !== -1 && p) {
-              // CASO 1: Spettatore o Giocatore Morto -> ESCI SUBITO
               if (room.gameState !== "LOBBY" && (p.isSpectator || p.lives <= 0)) {
                   if (room.disconnectTimers[p.name]) delete room.disconnectTimers[p.name];
-                  
-                  // Sistema indici
                   if (index < room.dealerIndex) room.dealerIndex--;
                   if (index < room.currentPlayerIndex) room.currentPlayerIndex--;
                   if (index < room.firstPlayerIndex) room.firstPlayerIndex--;
-
                   room.players.splice(index, 1);
-                  io.to(roomName).emit('statusMsg', `👋 <b>${p.name}</b> è uscito.`);
+                  
+                  // MESSAGGIO IN CHAT, NON SUL TAVOLO
+                  io.to(roomName).emit('chatMessage', { name: "SISTEMA", text: `👋 <b>${p.name}</b> è uscito.`, id: "SYS" });
+                  
                   if(room.players.length === 0) delete rooms[roomName];
                   else broadcastUpdate(roomName);
                   return;
               }
 
-              // CASO 2: Lobby -> ESCI SUBITO
               if (room.gameState === "LOBBY") {
                   room.players.splice(index, 1);
                   if(room.players.length === 0) delete rooms[roomName];
                   else broadcastUpdate(roomName); 
-                  return;
-              }
-
-              // CASO 3: Giocatore Vivo in Partita -> TIMER 30s
-              if (isDisconnectError) {
-                  if (p.pendingRemoval) return;
-                  io.to(roomName).emit('statusMsg', `⚠️ <b>${p.name}</b> disconnesso. Attesa 30s...`);
-                  if (room.disconnectTimers[p.name]) clearTimeout(room.disconnectTimers[p.name]);
-                  room.disconnectTimers[p.name] = setTimeout(() => { handleTimeoutDeath(roomName, p.name); }, 30000); 
               } else {
-                  // Se clicca "Cambia Stanza" mentre gioca, muore subito
-                  handleTimeoutDeath(roomName, p.name);
+                  if (isDisconnectError) {
+                      if (p.pendingRemoval) return;
+                      // MESSAGGIO IN CHAT, NON SUL TAVOLO
+                      io.to(roomName).emit('chatMessage', { name: "SISTEMA", text: `⚠️ <b>${p.name}</b> disconnesso. Attesa 30s...`, id: "SYS" });
+                      
+                      if (room.disconnectTimers[p.name]) clearTimeout(room.disconnectTimers[p.name]);
+                      room.disconnectTimers[p.name] = setTimeout(() => { handleTimeoutDeath(roomName, p.name); }, 30000); 
+                  } else {
+                      handleTimeoutDeath(roomName, p.name);
+                  }
               }
           }
       } catch (e) { console.error(e); }
@@ -170,6 +120,7 @@ io.on('connection', (socket) => {
           if (room.disconnectTimers[playerName]) delete room.disconnectTimers[playerName];
           if (p.pendingRemoval) return;
 
+          // QUESTO RIMANE SUL TAVOLO PERCHÈ INTERROMPE IL GIOCO
           io.to(roomName).emit('statusMsg', `<span style="color:red">⌛ ${p.name} rimosso dal gioco.</span>`);
           
           p.lives = 0; 
@@ -191,15 +142,24 @@ io.on('connection', (socket) => {
       const room = rooms[roomName]; const p = room.players.find(x => x.id === socket.id);
       if (!p || p.isSpectator) return; if (room.restartVotes.has(socket.id)) return; 
       room.restartVotes.add(socket.id);
-      io.to(roomName).emit('chatMessage', { name: "SISTEMA", text: `🔄 <b>${p.name}</b> ha votato per ricominciare!`, id: "SYS" });
-      if (room.restartVotes.size === 1) {
-          if(room.voteTimer) clearTimeout(room.voteTimer);
-          room.voteTimer = setTimeout(() => { if(rooms[roomName]) { rooms[roomName].restartVotes.clear(); rooms[roomName].voteTimer = null; io.to(roomName).emit('statusMsg', "❌ Tempo voto scaduto. Richiesta annullata."); } }, 30000); 
-      }
+      
       const activePlayersCount = room.players.filter(pl => !pl.isSpectator).length;
       const votes = room.restartVotes.size;
-      io.to(roomName).emit('statusMsg', `🔄 Voto Reset: ${votes}/${activePlayersCount}`);
-      if (votes >= activePlayersCount) { if(room.voteTimer) { clearTimeout(room.voteTimer); room.voteTimer = null; } io.to(roomName).emit('statusMsg', `✅ RESET APPROVATO!`); setTimeout(() => resetGame(roomName), 1500); }
+
+      // MESSAGGIO SOLO IN CHAT
+      io.to(roomName).emit('chatMessage', { name: "SISTEMA", text: `🔄 <b>${p.name}</b> vota Reset (${votes}/${activePlayersCount})`, id: "SYS" });
+
+      if (room.restartVotes.size === 1) {
+          if(room.voteTimer) clearTimeout(room.voteTimer);
+          room.voteTimer = setTimeout(() => { if(rooms[roomName]) { rooms[roomName].restartVotes.clear(); rooms[roomName].voteTimer = null; io.to(roomName).emit('chatMessage', { name: "SISTEMA", text: "❌ Tempo voto scaduto.", id: "SYS" }); } }, 30000); 
+      }
+      
+      if (votes >= activePlayersCount) { 
+          if(room.voteTimer) { clearTimeout(room.voteTimer); room.voteTimer = null; } 
+          // QUESTO RIMANE SUL TAVOLO: È L'APPROVAZIONE FINALE
+          io.to(roomName).emit('statusMsg', `✅ RESET APPROVATO!`); 
+          setTimeout(() => resetGame(roomName), 1500); 
+      }
   });
 
   socket.on('leaveGame', (data) => {
@@ -208,7 +168,7 @@ io.on('connection', (socket) => {
       const staySpectator = data ? data.staySpectator : true;
       if (p && p.lives > 0) {
           p.lives = 0; p.isSpectator = true; 
-          io.to(roomName).emit('statusMsg', `<span style="color:red">🏳️ ${p.name} HA ABBANDONATO!</span>`);
+          io.to(roomName).emit('chatMessage', { name: "SISTEMA", text: `<span style="color:red">🏳️ ${p.name} HA ABBANDONATO!</span>`, id: "SYS" });
           if (!staySpectator) { p.pendingRemoval = true; }
           if (room.gameState === "PLAYING" || room.gameState === "BIDDING") { room.isProcessing = true; setTimeout(() => endRoundLogic(roomName, true), 1000); } 
           else { if (p.pendingRemoval) { room.players = room.players.filter(pl => !pl.pendingRemoval); } broadcastUpdate(roomName); }
@@ -233,7 +193,12 @@ io.on('connection', (socket) => {
           const room = rooms[sanitizedRoom];
           const ex = room.players.find(p => p.name === name);
           if (ex) {
-              if (room.disconnectTimers[name]) { clearTimeout(room.disconnectTimers[name]); delete room.disconnectTimers[name]; io.to(roomName).emit('statusMsg', `✅ <b>${name}</b> è tornato!`); }
+              if (room.disconnectTimers[name]) { 
+                  clearTimeout(room.disconnectTimers[name]); 
+                  delete room.disconnectTimers[name]; 
+                  // MESSAGGIO SOLO IN CHAT
+                  io.to(roomName).emit('chatMessage', { name: "SISTEMA", text: `✅ <b>${name}</b> è tornato!`, id: "SYS" });
+              }
               if(room.restartVotes.has(ex.id)) { room.restartVotes.delete(ex.id); room.restartVotes.add(socket.id); }
               ex.id = socket.id; ex.pendingRemoval = false; 
               socket.emit('reconnectData', { myId: ex.id, hand: ex.hand, gameState: room.gameState, isMyTurn: (room.players[room.currentPlayerIndex]?.id === ex.id), players: room.players.map(p => ({ id: p.id, name: p.name, lives: p.lives, lastBid: p.bid, lastWon: p.tricksWon })), table: room.tableCards, phase: room.gameState, roundCards: room.roundCardsCount, bonusInfo: { used: room.bonusLifeUsed, by: room.bonusUsedBy }, isHost: (room.players[0].id === ex.id) });
@@ -241,7 +206,7 @@ io.on('connection', (socket) => {
               return;
           }
           let isSpectator = false;
-          if (room.gameState !== "LOBBY") { isSpectator = true; socket.emit('statusMsg', "Partita in corso. Entrato come Spettatore."); }
+          if (room.gameState !== "LOBBY") { isSpectator = true; socket.emit('chatMessage', { name: "INFO", text: "Partita in corso. Entrato come Spettatore.", id: "SYS" }); }
           if (room.players.length >= 8 && !isSpectator) return socket.emit('errorMsg', 'Tavolo Pieno! Massimo 8 giocatori.');
           if (!room.players.find(p => p.id === socket.id)) { room.players.push({ id: socket.id, name, lives: isSpectator ? 0 : 5, hand: [], bid: null, tricksWon: 0, isSpectator: isSpectator }); }
           if (isSpectator) {
@@ -280,6 +245,25 @@ io.on('connection', (socket) => {
   socket.on('playCard', (data) => { try { const roomName = socket.roomName; if (!roomName || !rooms[roomName]) return; const room = rooms[roomName]; if(room.gameState==="PAUSED" || room.isProcessing || !room.players[room.currentPlayerIndex] || room.players[room.currentPlayerIndex].id !== socket.id) return; const p = room.players.find(x=>x.id===socket.id), c = p.hand[data.cardIndex]; p.hand.splice(data.cardIndex, 1); let isHigh = (c.suit==='denari'&&c.value===1&&data.assoChoice==='HIGH'); room.tableCards.push({ playerId: p.id, card: c, isAssoHigh: isHigh, playerName: p.name }); io.to(roomName).emit('tableUpdate', room.tableCards); io.to(p.id).emit('updateHand', p.hand); nextTurn(roomName, 'PLAYING'); } catch(e) { console.error(e); } });
 });
 
+function broadcastUpdate(roomName) {
+    const room = rooms[roomName];
+    if(!room) return;
+    room.players.forEach(p => {
+        io.to(p.id).emit('updatePlayers', {
+            list: room.players.map((pl, idx) => ({ 
+                id: pl.id, 
+                name: pl.name, 
+                lives: pl.lives, 
+                lastBid: pl.bid, 
+                lastWon: pl.tricksWon, 
+                isSpectator: pl.isSpectator,
+                isDealer: (idx === room.dealerIndex), 
+                handCount: pl.hand.length
+            })),
+            isHost: (room.players.length > 0 && room.players[0].id === p.id) 
+        });
+    });
+}
 function startRound(roomName) {
   const room = rooms[roomName];
   room.deck = shuffle(createDeck()); room.tableCards = []; room.isProcessing = false;
@@ -288,7 +272,6 @@ function startRound(roomName) {
   else { io.to(roomName).emit('clearBlindCards'); room.players.forEach(p => { if (p.lives > 0) io.to(p.id).emit('updateHand', p.hand); else io.to(p.id).emit('updateHand', []); }); }
   room.firstPlayerIndex = getNextAliveIndex(room.dealerIndex, room.players); room.currentPlayerIndex = room.firstPlayerIndex; broadcastUpdate(roomName); updateGameState(roomName);
 }
-
 function nextTurn(roomName, phase) {
   const room = rooms[roomName];
   if (phase === 'BIDDING') { room.currentPlayerIndex = getNextAliveIndex(room.currentPlayerIndex, room.players); if (room.currentPlayerIndex === room.firstPlayerIndex) { updateGameState(roomName, "PLAYING"); return; } updateGameState(roomName, "BIDDING"); } 
@@ -299,11 +282,9 @@ function evaluateTrick(roomName) {
     const room = rooms[roomName]; room.isProcessing = true;
     let winner = room.tableCards[0], maxP = getCardPower(winner.card, winner.isAssoHigh);
     for (let i = 1; i < room.tableCards.length; i++) { let p = getCardPower(room.tableCards[i].card, room.tableCards[i].isAssoHigh); if (p > maxP) { winner = room.tableCards[i]; maxP = p; } }
-    
     let wPlayer = room.players.find(p => p.id === winner.playerId);
     let winnerName = wPlayer?.name || "Sconosciuto";
     io.to(roomName).emit('trickResult', `Presa: ${winnerName}`); 
-    
     const waitTime = (room.roundCardsCount === 1) ? 8000 : 4000;
     setTimeout(() => {
         try {
@@ -332,66 +313,32 @@ function endRoundLogic(roomName, safeMode = false) {
         if (cappotto && room.roundCardsCount > 1) { room.players.filter(p=>p.lives>0).forEach(p => { if(p.id!==cappotto.id) p.lives -= 1; }); reportMsg += `<span style='color:red'>🔥 CAPPOTTO DI ${cappotto.name.toUpperCase()}! GLI ALTRI -1!</span><br>`; } 
         else { room.players.filter(p=>p.lives>0).forEach(p => { let d = Math.abs(p.bid - p.tricksWon); if (d > 0) { p.lives -= d; reportMsg += `${p.name}: <span style='color:#ff4444'>-${d} ❤️</span><br>`; } else { reportMsg += `${p.name}: <span style='color:#44ff44'>Salvo</span><br>`; } }); }
     }
-
     let alivePlayers = room.players.filter(p => p.lives > 0);
-
     if (alivePlayers.length === 0 && !safeMode) {
-        // Nessun vivo: cerca il "miglior morto" (punteggio più alto)
         const participants = room.players.filter(p => !p.isSpectator);
         const maxLives = Math.max(...participants.map(p => p.lives));
         const survivors = participants.filter(p => p.lives === maxLives);
         survivors.forEach(p => p.lives = 1); 
         reportMsg += `<br>⚖️ <b>TUTTI A 0 O MENO!</b><br>Si salvano quelli a ${maxLives}: ${survivors.map(p=>p.name).join(', ')}`;
         alivePlayers = survivors;
-    } 
-    else {
-        // C'è qualcuno vivo. Controlla Bonus Vita per chi è appena morto.
+    } else {
         let justDied = room.players.filter(p => p.lives <= 0 && !p.isSpectator);
-        if (alivePlayers.length > 0 && justDied.length > 0 && !room.bonusLifeUsed && !safeMode) {
-             justDied.forEach(p => p.lives += 1); 
-             room.bonusLifeUsed = true; 
-             room.bonusUsedBy = justDied.map(p => p.name).join(", "); 
-             reportMsg += `<br>✨ <b>BONUS ATTIVATO!</b><br>Salvati: ${room.bonusUsedBy}`;
-             io.to(roomName).emit('updateBonus', { used: true, by: room.bonusUsedBy });
-             alivePlayers = room.players.filter(p => p.lives > 0);
-        } else if (alivePlayers.length > 0 && justDied.length > 0) {
-             reportMsg += `<br>💀 <b>ELIMINATI:</b> ${justDied.map(p=>p.name).join(', ')}`;
-        }
+        if (alivePlayers.length > 0 && justDied.length > 0 && !room.bonusLifeUsed && !safeMode) { justDied.forEach(p => p.lives += 1); room.bonusLifeUsed = true; room.bonusUsedBy = justDied.map(p => p.name).join(", "); reportMsg += `<br>✨ <b>BONUS ATTIVATO!</b><br>Salvati: ${room.bonusUsedBy}`; io.to(roomName).emit('updateBonus', { used: true, by: room.bonusUsedBy }); alivePlayers = room.players.filter(p => p.lives > 0); }
+        else if (alivePlayers.length > 0 && justDied.length > 0) { reportMsg += `<br>💀 <b>ELIMINATI:</b> ${justDied.map(p=>p.name).join(', ')}`; }
     }
-
+    
+    // RIMANE SUL TAVOLO: È IL REPORT FINALE
     io.to(roomName).emit('statusMsg', reportMsg);
     
-    // --- PULIZIA FINALE: Rimuovi chi era Pending Removal ---
     const removedPlayers = room.players.filter(p => p.pendingRemoval);
-    if (removedPlayers.length > 0) {
-        removedPlayers.forEach(p => { io.to(p.id).emit('forceKick'); });
-        room.players = room.players.filter(p => !p.pendingRemoval);
-    }
-
-    if (alivePlayers.length === 1) { 
-        setTimeout(() => { 
-            io.to(roomName).emit('gameOver', `🏆 VINCE ${alivePlayers[0].name.toUpperCase()}! 🏆`); 
-            setTimeout(() => resetGame(roomName), 5000); 
-        }, 4000); 
-        return; 
-    }
-    
+    if (removedPlayers.length > 0) { removedPlayers.forEach(p => { io.to(p.id).emit('forceKick'); }); room.players = room.players.filter(p => !p.pendingRemoval); }
+    if (alivePlayers.length === 1) { setTimeout(() => { io.to(roomName).emit('gameOver', `🏆 VINCE ${alivePlayers[0].name.toUpperCase()}! 🏆`); setTimeout(() => resetGame(roomName), 5000); }, 4000); return; }
     room.roundCardsCount--; 
     let skipDealer = false;
     if (alivePlayers.length === 2 && room.roundCardsCount === 1) { room.roundCardsCount = 5; reportMsg += "<br>(Siamo in 2: Saltato turno da 1)"; io.to(roomName).emit('statusMsg', reportMsg); } 
-    else if (room.roundCardsCount < 1) {
-        room.roundCardsCount = 5;
-        const currentActiveCount = room.players.filter(p => p.lives > 0).length;
-        if (currentActiveCount === 5 && room.lastRoundPlayerCount === 5) skipDealer = true;
-        room.lastRoundPlayerCount = currentActiveCount;
-    }
-
+    else if (room.roundCardsCount < 1) { room.roundCardsCount = 5; const currentActiveCount = room.players.filter(p => p.lives > 0).length; if (currentActiveCount === 5 && room.lastRoundPlayerCount === 5) skipDealer = true; room.lastRoundPlayerCount = currentActiveCount; }
     room.dealerIndex = getNextAliveIndex(room.dealerIndex, room.players);
-    if (skipDealer) {
-        room.dealerIndex = getNextAliveIndex(room.dealerIndex, room.players);
-        setTimeout(() => io.to(roomName).emit('statusMsg', "🔀 Giro bloccato in 5: Il Mazziere salta uno!"), 2000);
-    }
-
+    if (skipDealer) { room.dealerIndex = getNextAliveIndex(room.dealerIndex, room.players); setTimeout(() => io.to(roomName).emit('statusMsg', "🔀 Giro bloccato in 5: Il Mazziere salta uno!"), 2000); }
     broadcastUpdate(roomName);
     setTimeout(() => { if(rooms[roomName]) { io.to(roomName).emit('statusMsg', `Nuovo Round: ${room.roundCardsCount} carte`); room.isProcessing = false; startRound(roomName); } }, 6000);
 }
@@ -403,5 +350,7 @@ function resetGame(roomName) {
     r.players.forEach(p => { p.lives=5; p.hand=[]; p.bid=null; p.tricksWon=0; }); 
     io.to(roomName).emit('backToLobby'); broadcastUpdate(roomName); 
 }
+
+function updateGameState(roomName, force) { const r = rooms[roomName]; if(!r) return; if (r.gameState === "PAUSED") return; if(force) r.gameState=force; else if (!r.players[r.firstPlayerIndex] || r.players[r.firstPlayerIndex].bid === null) r.gameState = "BIDDING"; else r.gameState = "PLAYING"; let msg = r.gameState === "BIDDING" ? `Scommetti: ${r.players[r.currentPlayerIndex].name}` : `Gioca: ${r.players[r.currentPlayerIndex].name}`; io.to(roomName).emit('statusMsg', msg); io.to(roomName).emit('turnUpdate', { playerId: r.players[r.currentPlayerIndex].id, phase: r.gameState, roundCards: r.roundCardsCount }); }
 
 server.listen(PORT, () => console.log(`SERVER PORT ${PORT}`));
