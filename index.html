@@ -132,8 +132,8 @@
 
     <div id="login">
         <h2 style="color:#d4af37; margin-top:0;">BISCA ONLINE</h2>
-        <input id="username" placeholder="Tuo Nome" maxlength="20">
-        <input id="roomname" placeholder="Nome Stanza (es. Pizza)" maxlength="20">
+        <input id="username" placeholder="Tuo Nome" maxlength="10">
+        <input id="roomname" placeholder="Nome Stanza (es. Pizza)" maxlength="15">
         <button onclick="join()">ENTRA</button>
     </div>
     
@@ -225,12 +225,16 @@
             chatBox.appendChild(div); chatBox.scrollTop = chatBox.scrollHeight;
         });
 
+        // --- RICEZIONE RICHIESTA ASSO DAL SERVER ---
+        socket.on('askAsso', (idx) => {
+            pendingCardIndex = idx;
+            document.getElementById('asso-modal').style.display = 'flex';
+        });
+
         function renderCard(c, isHand, idx, isBack = false) {
             const div = document.createElement('div');
             div.className = isHand ? 'card hand-card' : 'card table-card';
-            if (isBack) {
-                div.className += ' card-back';
-            } else {
+            if (isBack) { div.className += ' card-back'; } else {
                 const sMap = {'denari':'d', 'coppe':'c', 'spade':'s', 'bastoni':'b'};
                 const imgSrc = `${CARTELLE_LOCALE}${c.value}${sMap[c.suit]}${ESTENSIONE}`;
                 div.innerHTML = `<img src="${imgSrc}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'"><div class="card-css" style="display:none;color:black;padding-top:20px;font-size:10px;">${c.value}<br>${c.suit}</div>`;
@@ -373,9 +377,8 @@
                 let handCardsHTML = "";
                 if(p.id !== myId && p.lives > 0 && p.handCount > 0) { handCardsHTML = `<div class="mini-card-container">`; for(let k=0; k<p.handCount; k++) { handCardsHTML += `<div class="mini-card"></div>`; } handCardsHTML += `</div>`; }
                 
-                // --- FIX LAYOUT: Box a sinistra SOLO se in alto AL CENTRO ---
+                // LAYOUT FIX: Box a sinistra SOLO se in alto AL CENTRO
                 let infoStyle = "";
-                // Applica solo se cy è molto basso (alto) e cx è centrale (tra 40 e 60)
                 if (cy < 25 && cx > 40 && cx < 60) {
                     infoStyle = "position: absolute; right: 105%; top: 50%; transform: translateY(-50%); margin-top: 0;";
                 }
@@ -395,7 +398,7 @@
             });
         }
     </script>
-    <script data-goatcounter="https://bisca.goatcounter.com/count"
+        <script data-goatcounter="https://bisca.goatcounter.com/count"
         async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>
