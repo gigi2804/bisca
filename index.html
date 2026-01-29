@@ -225,12 +225,6 @@
             chatBox.appendChild(div); chatBox.scrollTop = chatBox.scrollHeight;
         });
 
-        // --- RICEZIONE RICHIESTA ASSO DAL SERVER ---
-        socket.on('askAsso', (idx) => {
-            pendingCardIndex = idx;
-            document.getElementById('asso-modal').style.display = 'flex';
-        });
-
         function renderCard(c, isHand, idx, isBack = false) {
             const div = document.createElement('div');
             div.className = isHand ? 'card hand-card' : 'card table-card';
@@ -398,7 +392,5 @@
             });
         }
     </script>
-        <script data-goatcounter="https://bisca.goatcounter.com/count"
-        async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>

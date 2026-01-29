@@ -13,7 +13,7 @@ app.use('/carte', express.static(path.join(__dirname, 'carte')));
 
 app.get('/', (req, res) => { res.sendFile(__dirname + '/index.html'); });
 
-console.log("SERVER AVVIATO: Fix Messaggi Chat vs Tavolo");
+console.log("SERVER AVVIATO: Logica Asso Automatico su Presa");
 
 const rooms = {}; 
 const SUITS = ['denari', 'coppe', 'spade', 'bastoni'];
@@ -83,10 +83,7 @@ io.on('connection', (socket) => {
                   if (index < room.currentPlayerIndex) room.currentPlayerIndex--;
                   if (index < room.firstPlayerIndex) room.firstPlayerIndex--;
                   room.players.splice(index, 1);
-                  
-                  // MESSAGGIO IN CHAT, NON SUL TAVOLO
                   io.to(roomName).emit('chatMessage', { name: "SISTEMA", text: `👋 <b>${p.name}</b> è uscito.`, id: "SYS" });
-                  
                   if(room.players.length === 0) delete rooms[roomName];
                   else broadcastUpdate(roomName);
                   return;
@@ -99,9 +96,7 @@ io.on('connection', (socket) => {
               } else {
                   if (isDisconnectError) {
                       if (p.pendingRemoval) return;
-                      // MESSAGGIO IN CHAT, NON SUL TAVOLO
                       io.to(roomName).emit('chatMessage', { name: "SISTEMA", text: `⚠️ <b>${p.name}</b> disconnesso. Attesa 30s...`, id: "SYS" });
-                      
                       if (room.disconnectTimers[p.name]) clearTimeout(room.disconnectTimers[p.name]);
                       room.disconnectTimers[p.name] = setTimeout(() => { handleTimeoutDeath(roomName, p.name); }, 30000); 
                   } else {
@@ -119,14 +114,8 @@ io.on('connection', (socket) => {
       if (p) {
           if (room.disconnectTimers[playerName]) delete room.disconnectTimers[playerName];
           if (p.pendingRemoval) return;
-
-          // QUESTO RIMANE SUL TAVOLO PERCHÈ INTERROMPE IL GIOCO
           io.to(roomName).emit('statusMsg', `<span style="color:red">⌛ ${p.name} rimosso dal gioco.</span>`);
-          
-          p.lives = 0; 
-          p.isSpectator = true; 
-          p.pendingRemoval = true; 
-
+          p.lives = 0; p.isSpectator = true; p.pendingRemoval = true; 
           if (room.gameState === "PLAYING" || room.gameState === "BIDDING") {
               room.isProcessing = true; 
               setTimeout(() => endRoundLogic(roomName, true), 1000);
@@ -142,24 +131,14 @@ io.on('connection', (socket) => {
       const room = rooms[roomName]; const p = room.players.find(x => x.id === socket.id);
       if (!p || p.isSpectator) return; if (room.restartVotes.has(socket.id)) return; 
       room.restartVotes.add(socket.id);
-      
       const activePlayersCount = room.players.filter(pl => !pl.isSpectator).length;
       const votes = room.restartVotes.size;
-
-      // MESSAGGIO SOLO IN CHAT
       io.to(roomName).emit('chatMessage', { name: "SISTEMA", text: `🔄 <b>${p.name}</b> vota Reset (${votes}/${activePlayersCount})`, id: "SYS" });
-
       if (room.restartVotes.size === 1) {
           if(room.voteTimer) clearTimeout(room.voteTimer);
           room.voteTimer = setTimeout(() => { if(rooms[roomName]) { rooms[roomName].restartVotes.clear(); rooms[roomName].voteTimer = null; io.to(roomName).emit('chatMessage', { name: "SISTEMA", text: "❌ Tempo voto scaduto.", id: "SYS" }); } }, 30000); 
       }
-      
-      if (votes >= activePlayersCount) { 
-          if(room.voteTimer) { clearTimeout(room.voteTimer); room.voteTimer = null; } 
-          // QUESTO RIMANE SUL TAVOLO: È L'APPROVAZIONE FINALE
-          io.to(roomName).emit('statusMsg', `✅ RESET APPROVATO!`); 
-          setTimeout(() => resetGame(roomName), 1500); 
-      }
+      if (votes >= activePlayersCount) { if(room.voteTimer) { clearTimeout(room.voteTimer); room.voteTimer = null; } io.to(roomName).emit('statusMsg', `✅ RESET APPROVATO!`); setTimeout(() => resetGame(roomName), 1500); }
   });
 
   socket.on('leaveGame', (data) => {
@@ -193,12 +172,7 @@ io.on('connection', (socket) => {
           const room = rooms[sanitizedRoom];
           const ex = room.players.find(p => p.name === name);
           if (ex) {
-              if (room.disconnectTimers[name]) { 
-                  clearTimeout(room.disconnectTimers[name]); 
-                  delete room.disconnectTimers[name]; 
-                  // MESSAGGIO SOLO IN CHAT
-                  io.to(roomName).emit('chatMessage', { name: "SISTEMA", text: `✅ <b>${name}</b> è tornato!`, id: "SYS" });
-              }
+              if (room.disconnectTimers[name]) { clearTimeout(room.disconnectTimers[name]); delete room.disconnectTimers[name]; io.to(roomName).emit('chatMessage', { name: "SISTEMA", text: `✅ <b>${name}</b> è tornato!`, id: "SYS" }); }
               if(room.restartVotes.has(ex.id)) { room.restartVotes.delete(ex.id); room.restartVotes.add(socket.id); }
               ex.id = socket.id; ex.pendingRemoval = false; 
               socket.emit('reconnectData', { myId: ex.id, hand: ex.hand, gameState: room.gameState, isMyTurn: (room.players[room.currentPlayerIndex]?.id === ex.id), players: room.players.map(p => ({ id: p.id, name: p.name, lives: p.lives, lastBid: p.bid, lastWon: p.tricksWon })), table: room.tableCards, phase: room.gameState, roundCards: room.roundCardsCount, bonusInfo: { used: room.bonusLifeUsed, by: room.bonusUsedBy }, isHost: (room.players[0].id === ex.id) });
@@ -242,7 +216,38 @@ io.on('connection', (socket) => {
   socket.on('togglePause', () => { const r=rooms[socket.roomName]; if(!r)return; if(r.gameState==="PAUSED"){r.gameState=r.previousState; io.to(socket.roomName).emit('gamePaused',false); updateGameState(socket.roomName);} else {r.previousState=r.gameState; r.gameState="PAUSED"; io.to(socket.roomName).emit('gamePaused',true);} });
   socket.on('sendChat', (m) => { const r=rooms[socket.roomName]; if(!r)return; const p=r.players.find(x=>x.id===socket.id); if(p) io.to(socket.roomName).emit('chatMessage',{name:p.name,text:m,id:p.id}); });
   socket.on('placeBid', (bid) => { try { const roomName = socket.roomName; if (!roomName || !rooms[roomName]) return; const room = rooms[roomName]; if(room.gameState==="PAUSED" || !room.players[room.currentPlayerIndex] || room.players[room.currentPlayerIndex].id !== socket.id) return; if(room.currentPlayerIndex === room.dealerIndex && room.players.filter(p=>p.lives>0).reduce((s,p)=>s+(p.bid||0),0)+bid===room.roundCardsCount) return socket.emit('warning', "⚠️ Il mazziere non può chiamare questo numero!"); room.players.find(p=>p.id===socket.id).bid = bid; broadcastUpdate(roomName); nextTurn(roomName, 'BIDDING'); } catch(e) { console.error(e); } });
-  socket.on('playCard', (data) => { try { const roomName = socket.roomName; if (!roomName || !rooms[roomName]) return; const room = rooms[roomName]; if(room.gameState==="PAUSED" || room.isProcessing || !room.players[room.currentPlayerIndex] || room.players[room.currentPlayerIndex].id !== socket.id) return; const p = room.players.find(x=>x.id===socket.id), c = p.hand[data.cardIndex]; p.hand.splice(data.cardIndex, 1); let isHigh = (c.suit==='denari'&&c.value===1&&data.assoChoice==='HIGH'); room.tableCards.push({ playerId: p.id, card: c, isAssoHigh: isHigh, playerName: p.name }); io.to(roomName).emit('tableUpdate', room.tableCards); io.to(p.id).emit('updateHand', p.hand); nextTurn(roomName, 'PLAYING'); } catch(e) { console.error(e); } });
+  
+  socket.on('playCard', (data) => { 
+      try { 
+          const roomName = socket.roomName; if (!roomName || !rooms[roomName]) return; 
+          const room = rooms[roomName]; 
+          if(room.gameState==="PAUSED" || room.isProcessing || !room.players[room.currentPlayerIndex] || room.players[room.currentPlayerIndex].id !== socket.id) return; 
+          
+          const p = room.players.find(x=>x.id===socket.id), c = p.hand[data.cardIndex];
+          p.hand.splice(data.cardIndex, 1); 
+          
+          // --- LOGICA ASSO AUTOMATICO ---
+          let isHigh = false;
+          if (c.suit === 'denari' && c.value === 1) {
+              if (data.assoChoice) {
+                  // Caso Normale: Scelta manuale
+                  isHigh = (data.assoChoice === 'HIGH');
+              } else {
+                  // Caso Cieco: Scelta automatica basata sulla scommessa
+                  // Se ho detto 1 -> Voglio vincere -> Alto
+                  // Se ho detto 0 -> Voglio perdere -> Basso
+                  if (p.bid === 1) isHigh = true;
+                  else isHigh = false;
+              }
+          }
+          // -----------------------------
+
+          room.tableCards.push({ playerId: p.id, card: c, isAssoHigh: isHigh, playerName: p.name }); 
+          io.to(roomName).emit('tableUpdate', room.tableCards); 
+          io.to(p.id).emit('updateHand', p.hand); 
+          nextTurn(roomName, 'PLAYING'); 
+      } catch(e) { console.error(e); } 
+  });
 });
 
 function broadcastUpdate(roomName) {
@@ -326,10 +331,7 @@ function endRoundLogic(roomName, safeMode = false) {
         if (alivePlayers.length > 0 && justDied.length > 0 && !room.bonusLifeUsed && !safeMode) { justDied.forEach(p => p.lives += 1); room.bonusLifeUsed = true; room.bonusUsedBy = justDied.map(p => p.name).join(", "); reportMsg += `<br>✨ <b>BONUS ATTIVATO!</b><br>Salvati: ${room.bonusUsedBy}`; io.to(roomName).emit('updateBonus', { used: true, by: room.bonusUsedBy }); alivePlayers = room.players.filter(p => p.lives > 0); }
         else if (alivePlayers.length > 0 && justDied.length > 0) { reportMsg += `<br>💀 <b>ELIMINATI:</b> ${justDied.map(p=>p.name).join(', ')}`; }
     }
-    
-    // RIMANE SUL TAVOLO: È IL REPORT FINALE
     io.to(roomName).emit('statusMsg', reportMsg);
-    
     const removedPlayers = room.players.filter(p => p.pendingRemoval);
     if (removedPlayers.length > 0) { removedPlayers.forEach(p => { io.to(p.id).emit('forceKick'); }); room.players = room.players.filter(p => !p.pendingRemoval); }
     if (alivePlayers.length === 1) { setTimeout(() => { io.to(roomName).emit('gameOver', `🏆 VINCE ${alivePlayers[0].name.toUpperCase()}! 🏆`); setTimeout(() => resetGame(roomName), 5000); }, 4000); return; }
