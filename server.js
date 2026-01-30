@@ -3,9 +3,15 @@ const app = express();
 const http = require('http');
 const server = http.createServer(app);
 const { Server } = require("socket.io");
-const io = new Server(server);
-const path = require('path');
 
+// --- CONFIGURAZIONE STABILITÀ CONNESSIONE ---
+const io = new Server(server, {
+  pingTimeout: 60000,  // Aspetta 60 secondi prima di disconnettere
+  pingInterval: 25000, // Invia un segnale ogni 25 secondi
+  connectTimeout: 30000 
+});
+
+const path = require('path');
 const PORT = process.env.PORT || 3000;
 
 app.use(express.static(__dirname));
@@ -13,11 +19,12 @@ app.use('/carte', express.static(path.join(__dirname, 'carte')));
 
 app.get('/', (req, res) => { res.sendFile(__dirname + '/index.html'); });
 
-console.log("SERVER AVVIATO: Fix Logica Eliminazione e Asso");
+console.log("SERVER AVVIATO: Versione Anti-Freeze (High Tolerance)");
 
 const rooms = {}; 
 const SUITS = ['denari', 'coppe', 'spade', 'bastoni'];
 
+// [RESTA INVARIATA LA LOGICA DI ROOM E HELPER...]
 function createRoomState() {
     return {
         players: [], deck: [], tableCards: [],
@@ -57,7 +64,10 @@ function getNextAliveIndex(curr, players) {
 }
 
 io.on('connection', (socket) => {
-  socket.on('disconnect', () => { handleLeave(socket, true); });
+  socket.on('disconnect', (reason) => { 
+      console.log(`Socket scollegato: ${socket.id} (Motivo: ${reason})`);
+      handleLeave(socket, true); 
+  });
   socket.on('leaveRoom', () => { handleLeave(socket, false); });
 
   function handleLeave(sock, isDisconnectError) {
@@ -226,20 +236,11 @@ io.on('connection', (socket) => {
           const p = room.players.find(x=>x.id===socket.id), c = p.hand[data.cardIndex];
           p.hand.splice(data.cardIndex, 1); 
           
-          // --- LOGICA ASSO AUTOMATICO (Basata su Presa Dichiarata) ---
           let isHigh = false;
           if (c.suit === 'denari' && c.value === 1) {
-              if (data.assoChoice) {
-                  isHigh = (data.assoChoice === 'HIGH');
-              } else {
-                  // Se non c'è scelta (giocata cieca), decide in base alla scommessa
-                  // Bid > 0 -> Vuole vincere -> Alto
-                  // Bid == 0 -> Vuole perdere -> Basso
-                  if (p.bid > 0) isHigh = true;
-                  else isHigh = false;
-              }
+              if (data.assoChoice) isHigh = (data.assoChoice === 'HIGH');
+              else isHigh = (p.bid > 0);
           }
-          // -------------------------------------------------------------
 
           room.tableCards.push({ playerId: p.id, card: c, isAssoHigh: isHigh, playerName: p.name }); 
           io.to(roomName).emit('tableUpdate', room.tableCards); 
@@ -311,8 +312,6 @@ function endRoundLogic(roomName, safeMode = false) {
     const room = rooms[roomName]; 
     room.isProcessing = true; 
     let reportMsg = "📉 <b>RISULTATI TURNO</b> 📉<br>";
-
-    // 1. SALVIAMO GLI ID DI CHI ERA VIVO PRIMA DI SUBIRE DANNI
     const aliveBeforeIds = new Set(room.players.filter(p => p.lives > 0).map(p => p.id));
 
     if (safeMode) {
@@ -333,13 +332,9 @@ function endRoundLogic(roomName, safeMode = false) {
     }
 
     let alivePlayers = room.players.filter(p => p.lives > 0);
-
-    // 2. CALCOLIAMO CHI È "APPENA MORTO" (Era vivo prima, ora ha vite <= 0)
     let justDied = room.players.filter(p => p.lives <= 0 && aliveBeforeIds.has(p.id));
 
     if (alivePlayers.length === 0 && !safeMode) {
-        // TUTTI MORTI: VINCE CHI HA IL PUNTEGGIO PIÙ ALTO TRA I MORTI RECENTI E NON
-        // Nota: Qui consideriamo tutti i partecipanti per lo spareggio
         const participants = room.players.filter(p => !p.isSpectator);
         const maxLives = Math.max(...participants.map(p => p.lives));
         const survivors = participants.filter(p => p.lives === maxLives);
@@ -347,7 +342,6 @@ function endRoundLogic(roomName, safeMode = false) {
         reportMsg += `<br>⚖️ <b>TUTTI A 0 O MENO!</b><br>Si salvano quelli a ${maxLives}: ${survivors.map(p=>p.name).join(', ')}`;
         alivePlayers = survivors;
     } else {
-        // C'È QUALCUNO VIVO: GESTIONE BONUS SOLO PER I NUOVI MORTI (justDied)
         if (alivePlayers.length > 0 && justDied.length > 0 && !room.bonusLifeUsed && !safeMode) { 
             justDied.forEach(p => p.lives += 1); 
             room.bonusLifeUsed = true; 
@@ -362,16 +356,13 @@ function endRoundLogic(roomName, safeMode = false) {
     }
     
     io.to(roomName).emit('statusMsg', reportMsg);
-    
     const removedPlayers = room.players.filter(p => p.pendingRemoval);
     if (removedPlayers.length > 0) { removedPlayers.forEach(p => { io.to(p.id).emit('forceKick'); }); room.players = room.players.filter(p => !p.pendingRemoval); }
     if (alivePlayers.length === 1) { setTimeout(() => { io.to(roomName).emit('gameOver', `🏆 VINCE ${alivePlayers[0].name.toUpperCase()}! 🏆`); setTimeout(() => resetGame(roomName), 5000); }, 4000); return; }
-    
     room.roundCardsCount--; 
     let skipDealer = false;
     if (alivePlayers.length === 2 && room.roundCardsCount === 1) { room.roundCardsCount = 5; reportMsg += "<br>(Siamo in 2: Saltato turno da 1)"; io.to(roomName).emit('statusMsg', reportMsg); } 
     else if (room.roundCardsCount < 1) { room.roundCardsCount = 5; const currentActiveCount = room.players.filter(p => p.lives > 0).length; if (currentActiveCount === 5 && room.lastRoundPlayerCount === 5) skipDealer = true; room.lastRoundPlayerCount = currentActiveCount; }
-    
     room.dealerIndex = getNextAliveIndex(room.dealerIndex, room.players);
     if (skipDealer) { room.dealerIndex = getNextAliveIndex(room.dealerIndex, room.players); setTimeout(() => io.to(roomName).emit('statusMsg', "🔀 Giro bloccato in 5: Il Mazziere salta uno!"), 2000); }
     broadcastUpdate(roomName);
