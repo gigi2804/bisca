@@ -6,8 +6,8 @@ const { Server } = require("socket.io");
 
 // --- CONFIGURAZIONE STABILITÀ CONNESSIONE ---
 const io = new Server(server, {
-  pingTimeout: 60000,  // Aspetta 60 secondi prima di disconnettere
-  pingInterval: 25000, // Invia un segnale ogni 25 secondi
+  pingTimeout: 60000,
+  pingInterval: 25000,
   connectTimeout: 30000 
 });
 
@@ -19,12 +19,11 @@ app.use('/carte', express.static(path.join(__dirname, 'carte')));
 
 app.get('/', (req, res) => { res.sendFile(__dirname + '/index.html'); });
 
-console.log("SERVER AVVIATO: Versione Anti-Freeze (High Tolerance)");
+console.log("SERVER AVVIATO: Fix Definitivo Anti-Resurrezione");
 
 const rooms = {}; 
 const SUITS = ['denari', 'coppe', 'spade', 'bastoni'];
 
-// [RESTA INVARIATA LA LOGICA DI ROOM E HELPER...]
 function createRoomState() {
     return {
         players: [], deck: [], tableCards: [],
@@ -47,11 +46,13 @@ function createDeck() {
   return d;
 }
 function shuffle(arr) { for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; } return arr; }
+
 function getCardPower(c, isAssoHigh) {
   if (c.suit === 'denari' && c.value === 1) return isAssoHigh ? 9999 : -1;
   let p = c.suit === 'denari' ? 400 : c.suit === 'coppe' ? 300 : c.suit === 'spade' ? 200 : 100;
   return p + c.value;
 }
+
 function getNextAliveIndex(curr, players) {
     if(!players || players.length === 0) return 0;
     let next = (curr + 1) % players.length;
@@ -65,7 +66,6 @@ function getNextAliveIndex(curr, players) {
 
 io.on('connection', (socket) => {
   socket.on('disconnect', (reason) => { 
-      console.log(`Socket scollegato: ${socket.id} (Motivo: ${reason})`);
       handleLeave(socket, true); 
   });
   socket.on('leaveRoom', () => { handleLeave(socket, false); });
@@ -312,10 +312,12 @@ function endRoundLogic(roomName, safeMode = false) {
     const room = rooms[roomName]; 
     room.isProcessing = true; 
     let reportMsg = "📉 <b>RISULTATI TURNO</b> 📉<br>";
-    const aliveBeforeIds = new Set(room.players.filter(p => p.lives > 0).map(p => p.id));
+
+    // --- PUNTO CHIAVE: SALVIAMO CHI È VIVO ALL'INIZIO DEL CALCOLO ---
+    const aliveAtStartIds = new Set(room.players.filter(p => p.lives > 0).map(p => p.id));
 
     if (safeMode) {
-        reportMsg += "<br>🛑 <b>TURNO INTERROTTO (ABBANDONO/CRASH)</b><br>Nessuna vita persa.";
+        reportMsg += "<br>🛑 <b>TURNO INTERROTTO</b><br>Nessuna vita persa.";
         room.players.forEach(p => { if(p.lives > 0) p.hand = []; });
     } else {
         const cappotto = room.players.find(p => p.lives>0 && p.bid===room.roundCardsCount && p.tricksWon===room.roundCardsCount);
@@ -331,40 +333,49 @@ function endRoundLogic(roomName, safeMode = false) {
         }
     }
 
-    let alivePlayers = room.players.filter(p => p.lives > 0);
-    let justDied = room.players.filter(p => p.lives <= 0 && aliveBeforeIds.has(p.id));
+    let currentlyAlive = room.players.filter(p => p.lives > 0);
 
-    if (alivePlayers.length === 0 && !safeMode) {
-        const participants = room.players.filter(p => !p.isSpectator);
-        const maxLives = Math.max(...participants.map(p => p.lives));
-        const survivors = participants.filter(p => p.lives === maxLives);
-        survivors.forEach(p => p.lives = 1); 
-        reportMsg += `<br>⚖️ <b>TUTTI A 0 O MENO!</b><br>Si salvano quelli a ${maxLives}: ${survivors.map(p=>p.name).join(', ')}`;
-        alivePlayers = survivors;
+    // --- FIX: CALCOLIAMO CHI È MORTO SOLO IN QUESTO TURNO ---
+    let newlyDead = room.players.filter(p => p.lives <= 0 && aliveAtStartIds.has(p.id));
+
+    if (currentlyAlive.length === 0 && !safeMode) {
+        // --- CASO SPAREGGIO: RESUSCITIAMO SOLO I MIGLIORI DI QUESTO TURNO ---
+        // Filtriamo per considerare solo chi era in gioco all'inizio di questa smazzata
+        const turnParticipants = room.players.filter(p => aliveAtStartIds.has(p.id));
+        if (turnParticipants.length > 0) {
+            const maxLives = Math.max(...turnParticipants.map(p => p.lives));
+            const survivors = turnParticipants.filter(p => p.lives === maxLives);
+            survivors.forEach(p => p.lives = 1); 
+            reportMsg += `<br>⚖️ <b>TUTTI A 0 O MENO!</b><br>Si salvano i migliori del turno: ${survivors.map(p=>p.name).join(', ')}`;
+            currentlyAlive = survivors;
+        }
     } else {
-        if (alivePlayers.length > 0 && justDied.length > 0 && !room.bonusLifeUsed && !safeMode) { 
-            justDied.forEach(p => p.lives += 1); 
+        // --- CASO BONUS: SALVIAMO SOLO CHI È MORTO ADESSO ---
+        if (currentlyAlive.length > 0 && newlyDead.length > 0 && !room.bonusLifeUsed && !safeMode) { 
+            newlyDead.forEach(p => p.lives += 1); 
             room.bonusLifeUsed = true; 
-            room.bonusUsedBy = justDied.map(p => p.name).join(", "); 
+            room.bonusUsedBy = newlyDead.map(p => p.name).join(", "); 
             reportMsg += `<br>✨ <b>BONUS ATTIVATO!</b><br>Salvati: ${room.bonusUsedBy}`; 
             io.to(roomName).emit('updateBonus', { used: true, by: room.bonusUsedBy }); 
-            alivePlayers = room.players.filter(p => p.lives > 0); 
+            currentlyAlive = room.players.filter(p => p.lives > 0); 
         }
-        else if (alivePlayers.length > 0 && justDied.length > 0) { 
-            reportMsg += `<br>💀 <b>ELIMINATI:</b> ${justDied.map(p=>p.name).join(', ')}`; 
+        else if (currentlyAlive.length > 0 && newlyDead.length > 0) { 
+            reportMsg += `<br>💀 <b>ELIMINATI:</b> ${newlyDead.map(p=>p.name).join(', ')}`; 
         }
     }
     
     io.to(roomName).emit('statusMsg', reportMsg);
     const removedPlayers = room.players.filter(p => p.pendingRemoval);
     if (removedPlayers.length > 0) { removedPlayers.forEach(p => { io.to(p.id).emit('forceKick'); }); room.players = room.players.filter(p => !p.pendingRemoval); }
-    if (alivePlayers.length === 1) { setTimeout(() => { io.to(roomName).emit('gameOver', `🏆 VINCE ${alivePlayers[0].name.toUpperCase()}! 🏆`); setTimeout(() => resetGame(roomName), 5000); }, 4000); return; }
+    if (currentlyAlive.length === 1) { setTimeout(() => { io.to(roomName).emit('gameOver', `🏆 VINCE ${currentlyAlive[0].name.toUpperCase()}! 🏆`); setTimeout(() => resetGame(roomName), 5000); }, 4000); return; }
+    
     room.roundCardsCount--; 
     let skipDealer = false;
-    if (alivePlayers.length === 2 && room.roundCardsCount === 1) { room.roundCardsCount = 5; reportMsg += "<br>(Siamo in 2: Saltato turno da 1)"; io.to(roomName).emit('statusMsg', reportMsg); } 
+    if (currentlyAlive.length === 2 && room.roundCardsCount === 1) { room.roundCardsCount = 5; reportMsg += "<br>(In 2: Salto turno da 1)"; io.to(roomName).emit('statusMsg', reportMsg); } 
     else if (room.roundCardsCount < 1) { room.roundCardsCount = 5; const currentActiveCount = room.players.filter(p => p.lives > 0).length; if (currentActiveCount === 5 && room.lastRoundPlayerCount === 5) skipDealer = true; room.lastRoundPlayerCount = currentActiveCount; }
+    
     room.dealerIndex = getNextAliveIndex(room.dealerIndex, room.players);
-    if (skipDealer) { room.dealerIndex = getNextAliveIndex(room.dealerIndex, room.players); setTimeout(() => io.to(roomName).emit('statusMsg', "🔀 Giro bloccato in 5: Il Mazziere salta uno!"), 2000); }
+    if (skipDealer) { room.dealerIndex = getNextAliveIndex(room.dealerIndex, room.players); setTimeout(() => io.to(roomName).emit('statusMsg', "🔀 Il Mazziere salta uno!"), 2000); }
     broadcastUpdate(roomName);
     setTimeout(() => { if(rooms[roomName]) { io.to(roomName).emit('statusMsg', `Nuovo Round: ${room.roundCardsCount} carte`); room.isProcessing = false; startRound(roomName); } }, 6000);
 }
