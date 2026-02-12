@@ -19,7 +19,7 @@ app.use('/carte', express.static(path.join(__dirname, 'carte')));
 
 app.get('/', (req, res) => { res.sendFile(__dirname + '/index.html'); });
 
-console.log("SERVER AVVIATO: Fix Definitivo Anti-Resurrezione");
+console.log("SERVER AVVIATO: Fix Clic Accidentale in Scommessa");
 
 const rooms = {}; 
 const SUITS = ['denari', 'coppe', 'spade', 'bastoni'];
@@ -231,6 +231,12 @@ io.on('connection', (socket) => {
       try { 
           const roomName = socket.roomName; if (!roomName || !rooms[roomName]) return; 
           const room = rooms[roomName]; 
+          
+          // --- FIX CLIC ACCIDENTALE ---
+          // Se NON è la fase di gioco (es. è fase scommessa), ignora il clic sulla carta
+          if (room.gameState !== "PLAYING") return;
+          // -----------------------------
+
           if(room.gameState==="PAUSED" || room.isProcessing || !room.players[room.currentPlayerIndex] || room.players[room.currentPlayerIndex].id !== socket.id) return; 
           
           const p = room.players.find(x=>x.id===socket.id), c = p.hand[data.cardIndex];
@@ -261,7 +267,7 @@ function broadcastUpdate(roomName) {
                 lives: pl.lives, 
                 lastBid: pl.bid, 
                 lastWon: pl.tricksWon, 
-                isSpectator: pl.isSpectator,
+                isSpectator: pl.isSpectator, 
                 isDealer: (idx === room.dealerIndex), 
                 handCount: pl.hand.length
             })),
@@ -312,8 +318,6 @@ function endRoundLogic(roomName, safeMode = false) {
     const room = rooms[roomName]; 
     room.isProcessing = true; 
     let reportMsg = "📉 <b>RISULTATI TURNO</b> 📉<br>";
-
-    // --- PUNTO CHIAVE: SALVIAMO CHI È VIVO ALL'INIZIO DEL CALCOLO ---
     const aliveAtStartIds = new Set(room.players.filter(p => p.lives > 0).map(p => p.id));
 
     if (safeMode) {
@@ -334,13 +338,9 @@ function endRoundLogic(roomName, safeMode = false) {
     }
 
     let currentlyAlive = room.players.filter(p => p.lives > 0);
-
-    // --- FIX: CALCOLIAMO CHI È MORTO SOLO IN QUESTO TURNO ---
     let newlyDead = room.players.filter(p => p.lives <= 0 && aliveAtStartIds.has(p.id));
 
     if (currentlyAlive.length === 0 && !safeMode) {
-        // --- CASO SPAREGGIO: RESUSCITIAMO SOLO I MIGLIORI DI QUESTO TURNO ---
-        // Filtriamo per considerare solo chi era in gioco all'inizio di questa smazzata
         const turnParticipants = room.players.filter(p => aliveAtStartIds.has(p.id));
         if (turnParticipants.length > 0) {
             const maxLives = Math.max(...turnParticipants.map(p => p.lives));
@@ -350,7 +350,6 @@ function endRoundLogic(roomName, safeMode = false) {
             currentlyAlive = survivors;
         }
     } else {
-        // --- CASO BONUS: SALVIAMO SOLO CHI È MORTO ADESSO ---
         if (currentlyAlive.length > 0 && newlyDead.length > 0 && !room.bonusLifeUsed && !safeMode) { 
             newlyDead.forEach(p => p.lives += 1); 
             room.bonusLifeUsed = true; 
@@ -368,12 +367,10 @@ function endRoundLogic(roomName, safeMode = false) {
     const removedPlayers = room.players.filter(p => p.pendingRemoval);
     if (removedPlayers.length > 0) { removedPlayers.forEach(p => { io.to(p.id).emit('forceKick'); }); room.players = room.players.filter(p => !p.pendingRemoval); }
     if (currentlyAlive.length === 1) { setTimeout(() => { io.to(roomName).emit('gameOver', `🏆 VINCE ${currentlyAlive[0].name.toUpperCase()}! 🏆`); setTimeout(() => resetGame(roomName), 5000); }, 4000); return; }
-    
     room.roundCardsCount--; 
     let skipDealer = false;
     if (currentlyAlive.length === 2 && room.roundCardsCount === 1) { room.roundCardsCount = 5; reportMsg += "<br>(In 2: Salto turno da 1)"; io.to(roomName).emit('statusMsg', reportMsg); } 
     else if (room.roundCardsCount < 1) { room.roundCardsCount = 5; const currentActiveCount = room.players.filter(p => p.lives > 0).length; if (currentActiveCount === 5 && room.lastRoundPlayerCount === 5) skipDealer = true; room.lastRoundPlayerCount = currentActiveCount; }
-    
     room.dealerIndex = getNextAliveIndex(room.dealerIndex, room.players);
     if (skipDealer) { room.dealerIndex = getNextAliveIndex(room.dealerIndex, room.players); setTimeout(() => io.to(roomName).emit('statusMsg', "🔀 Il Mazziere salta uno!"), 2000); }
     broadcastUpdate(roomName);
