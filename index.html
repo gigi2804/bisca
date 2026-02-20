@@ -124,7 +124,7 @@
             <div id="chat-header">CHAT</div>
             <div id="chat-messages"></div>
             <div id="chat-input-area">
-            <input type="file" id="chat-photo-input" accept="image/*" style="display:none;" onchange="compressAndSendPhoto(this)">
+            <input type="file" id="chat-photo-input" accept="image/*" capture="environment" style="display:none;" onchange="compressAndSendPhoto(this)">
             <button id="chat-photo-btn" onclick="document.getElementById('chat-photo-input').click()" style="width:40px; background:#444; border:none; cursor:pointer; font-size:16px; border-radius:4px;">📷</button>
             
             <input type="text" id="chat-input" placeholder="Scrivi..." autocomplete="off">
