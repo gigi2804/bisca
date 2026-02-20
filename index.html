@@ -124,12 +124,9 @@
             <div id="chat-header">CHAT</div>
             <div id="chat-messages"></div>
             <div id="chat-input-area">
-            <input type="file" id="chat-photo-input" accept="image/*" capture="environment" style="display:none;" onchange="compressAndSendPhoto(this)">
-            <button id="chat-photo-btn" onclick="document.getElementById('chat-photo-input').click()" style="width:40px; background:#444; border:none; cursor:pointer; font-size:16px; border-radius:4px;">📷</button>
-            
-            <input type="text" id="chat-input" placeholder="Scrivi..." autocomplete="off">
-            <button id="chat-send" onclick="sendChat()">➤</button>
-        </div>
+                <input type="text" id="chat-input" placeholder="Scrivi..." autocomplete="off">
+                <button id="chat-send" onclick="sendChat()">➤</button>
+            </div>
         </div>
     </div>
 
@@ -219,33 +216,6 @@
         }
         document.getElementById('chat-input').addEventListener("keypress", (e) => { if (e.key === "Enter") sendChat(); });
 
-        // FUNZIONE PER COMPRIMERE E INVIARE LA FOTO
-        function compressAndSendPhoto(input) {
-            if (!input.files || !input.files[0]) return;
-            const file = input.files[0];
-            const reader = new FileReader();
-            
-            reader.onload = function(e) {
-                const img = new Image();
-                img.onload = function() {
-                    const canvas = document.createElement('canvas');
-                    const MAX_WIDTH = 250; // Dimensione perfetta per la chat
-                    const scaleSize = MAX_WIDTH / img.width;
-                    canvas.width = MAX_WIDTH;
-                    canvas.height = img.height * scaleSize;
-                    
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                    
-                    const dataUrl = canvas.toDataURL('image/jpeg', 0.6); // Comprime al 60%
-                    socket.emit('sendChatImage', dataUrl);
-                }
-                img.src = e.target.result;
-            }
-            reader.readAsDataURL(file);
-            input.value = ""; // Resetta l'input per poter ricaricare la stessa foto se serve
-        }
-
         socket.on('chatMessage', (data) => {
             const chatBox = document.getElementById('chat-messages');
             const div = document.createElement('div');
@@ -253,16 +223,6 @@
             if(data.id === "SYS") { div.style.background = "transparent"; div.style.color = "#d4af37"; div.style.textAlign = "center"; div.style.border = "1px solid #d4af37"; }
             div.innerHTML = (data.id !== "SYS" ? `<div class="msg-name">${data.name}</div>` : "") + data.text;
             chatBox.appendChild(div); chatBox.scrollTop = chatBox.scrollHeight;
-        });
-
-        // RICEZIONE FOTO
-        socket.on('chatImage', (data) => {
-            const chatBox = document.getElementById('chat-messages');
-            const div = document.createElement('div');
-            div.className = (data.id === myId) ? 'msg msg-mine' : 'msg msg-other';
-            div.innerHTML = `<div class="msg-name">${data.name}</div><img src="${data.image}" style="max-width:100%; border-radius:6px; margin-top:4px;">`;
-            chatBox.appendChild(div); 
-            chatBox.scrollTop = chatBox.scrollHeight;
         });
 
         function renderCard(c, isHand, idx, isBack = false) {

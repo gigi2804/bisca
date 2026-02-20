@@ -225,12 +225,6 @@ io.on('connection', (socket) => {
 
   socket.on('togglePause', () => { const r=rooms[socket.roomName]; if(!r)return; if(r.gameState==="PAUSED"){r.gameState=r.previousState; io.to(socket.roomName).emit('gamePaused',false); updateGameState(socket.roomName);} else {r.previousState=r.gameState; r.gameState="PAUSED"; io.to(socket.roomName).emit('gamePaused',true);} });
   socket.on('sendChat', (m) => { const r=rooms[socket.roomName]; if(!r)return; const p=r.players.find(x=>x.id===socket.id); if(p) io.to(socket.roomName).emit('chatMessage',{name:p.name,text:m,id:p.id}); });
-  // RICEZIONE E INOLTRO FOTO IN CHAT
-  socket.on('sendChatImage', (imgData) => { 
-      const r=rooms[socket.roomName]; if(!r)return; 
-      const p=r.players.find(x=>x.id===socket.id); 
-      if(p) io.to(socket.roomName).emit('chatImage', {name:p.name, image:imgData, id:p.id}); 
-  });
   socket.on('placeBid', (bid) => { try { const roomName = socket.roomName; if (!roomName || !rooms[roomName]) return; const room = rooms[roomName]; if(room.gameState==="PAUSED" || !room.players[room.currentPlayerIndex] || room.players[room.currentPlayerIndex].id !== socket.id) return; if(room.currentPlayerIndex === room.dealerIndex && room.players.filter(p=>p.lives>0).reduce((s,p)=>s+(p.bid||0),0)+bid===room.roundCardsCount) return socket.emit('warning', "⚠️ Il mazziere non può chiamare questo numero!"); room.players.find(p=>p.id===socket.id).bid = bid; broadcastUpdate(roomName); nextTurn(roomName, 'BIDDING'); } catch(e) { console.error(e); } });
   
   socket.on('playCard', (data) => { 
