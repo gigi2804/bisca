@@ -123,10 +123,13 @@
         <div id="chat-sidebar" style="display:none;">
             <div id="chat-header">CHAT</div>
             <div id="chat-messages"></div>
-            <div id="chat-input-area">
-                <input type="text" id="chat-input" placeholder="Scrivi..." autocomplete="off">
-                <button id="chat-send" onclick="sendChat()">➤</button>
-            </div>
+           <div id="chat-input-area">
+            <input type="file" id="chat-photo-input" accept="image/*" capture="environment" style="display:none;" onchange="compressAndSendPhoto(this)">
+            <button id="chat-photo-btn" onclick="document.getElementById('chat-photo-input').click()" style="width:40px; background:#444; border:none; cursor:pointer; font-size:16px; border-radius:4px;">📷</button>
+            
+            <input type="text" id="chat-input" placeholder="Scrivi..." autocomplete="off">
+            <button id="chat-send" onclick="sendChat()">➤</button>
+        </div>
         </div>
     </div>
 
@@ -216,6 +219,60 @@
         }
         document.getElementById('chat-input').addEventListener("keypress", (e) => { if (e.key === "Enter") sendChat(); });
 
+        // NUOVA FUNZIONE: OTTIMIZZATA PER NON SATURARE LA RAM DEI TELEFONI
+        function compressAndSendPhoto(input) {
+            if (!input.files || !input.files[0]) return;
+            const file = input.files[0];
+
+            // Metodo moderno e leggerissimo per non caricare il file in RAM
+            const objectUrl = URL.createObjectURL(file);
+            const img = new Image();
+
+            img.onload = function() {
+                // Appena l'immagine è caricata, cancelliamo il file pesante dalla memoria!
+                URL.revokeObjectURL(objectUrl);
+
+                const canvas = document.createElement('canvas');
+                const MAX_WIDTH = 250;
+                const MAX_HEIGHT = 300; 
+                let width = img.width;
+                let height = img.height;
+
+                // Calcolo proporzioni intelligente
+                if (width > height) {
+                    if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
+                } else {
+                    if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; }
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.6); // Comprime a JPEG leggero
+
+                // LOGICA ANTI-DISCONNESSIONE
+                // Se la fotocamera ci ha fatto disconnettere, aspettiamo 1,5 secondi prima di inviare
+                if (socket.connected) {
+                    socket.emit('sendChatImage', dataUrl);
+                } else {
+                    setTimeout(() => {
+                        if (socket.connected) socket.emit('sendChatImage', dataUrl);
+                        else alert("Riconnessione in corso, riprova a inviare la foto.");
+                    }, 1500);
+                }
+            };
+
+            img.onerror = function() {
+                URL.revokeObjectURL(objectUrl);
+                alert("Errore: impossibile elaborare questa foto.");
+            };
+
+            img.src = objectUrl;
+            input.value = ""; // Resetta l'input
+        }
+
         socket.on('chatMessage', (data) => {
             const chatBox = document.getElementById('chat-messages');
             const div = document.createElement('div');
@@ -223,6 +280,16 @@
             if(data.id === "SYS") { div.style.background = "transparent"; div.style.color = "#d4af37"; div.style.textAlign = "center"; div.style.border = "1px solid #d4af37"; }
             div.innerHTML = (data.id !== "SYS" ? `<div class="msg-name">${data.name}</div>` : "") + data.text;
             chatBox.appendChild(div); chatBox.scrollTop = chatBox.scrollHeight;
+        });
+
+        // RICEZIONE FOTO
+        socket.on('chatImage', (data) => {
+            const chatBox = document.getElementById('chat-messages');
+            const div = document.createElement('div');
+            div.className = (data.id === myId) ? 'msg msg-mine' : 'msg msg-other';
+            div.innerHTML = `<div class="msg-name">${data.name}</div><img src="${data.image}" style="max-width:100%; border-radius:6px; margin-top:4px;">`;
+            chatBox.appendChild(div); 
+            chatBox.scrollTop = chatBox.scrollHeight;
         });
 
         function renderCard(c, isHand, idx, isBack = false) {
