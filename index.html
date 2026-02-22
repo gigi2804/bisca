@@ -219,58 +219,56 @@
         }
         document.getElementById('chat-input').addEventListener("keypress", (e) => { if (e.key === "Enter") sendChat(); });
 
-        // NUOVA FUNZIONE: OTTIMIZZATA PER NON SATURARE LA RAM DEI TELEFONI
-        function compressAndSendPhoto(input) {
+        // NUOVA FUNZIONE: ANTI-CRASH MEMORIA CON createImageBitmap
+        async function compressAndSendPhoto(input) {
             if (!input.files || !input.files[0]) return;
             const file = input.files[0];
 
-            // Metodo moderno e leggerissimo per non caricare il file in RAM
-            const objectUrl = URL.createObjectURL(file);
-            const img = new Image();
-
-            img.onload = function() {
-                // Appena l'immagine è caricata, cancelliamo il file pesante dalla memoria!
-                URL.revokeObjectURL(objectUrl);
-
+            try {
+                // Metodo ultra-leggero: decodifica l'immagine fuori dal processo principale
+                // Questo evita i picchi di RAM che causano il crash del browser mobile
+                const bitmap = await createImageBitmap(file);
+                
                 const canvas = document.createElement('canvas');
-                const MAX_WIDTH = 250;
-                const MAX_HEIGHT = 300; 
-                let width = img.width;
-                let height = img.height;
+                const MAX_SIZE = 300; // Lato massimo dell'immagine
+                let width = bitmap.width;
+                let height = bitmap.height;
 
-                // Calcolo proporzioni intelligente
+                // Calcolo proporzioni
                 if (width > height) {
-                    if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
+                    if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; }
                 } else {
-                    if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; }
+                    if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; }
                 }
 
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
+                canvas.width = Math.floor(width);
+                canvas.height = Math.floor(height);
                 
-                const dataUrl = canvas.toDataURL('image/jpeg', 0.6); // Comprime a JPEG leggero
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+                
+                // CRITICO: Svuota istantaneamente la RAM occupata dall'immagine originale
+                bitmap.close(); 
+                
+                // Comprimi in JPEG leggerissimo (circa 20-40kb)
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.5); 
 
-                // LOGICA ANTI-DISCONNESSIONE
-                // Se la fotocamera ci ha fatto disconnettere, aspettiamo 1,5 secondi prima di inviare
+                // Logica di attesa se il telefono si è disconnesso chiudendo il browser per la fotocamera
                 if (socket.connected) {
                     socket.emit('sendChatImage', dataUrl);
                 } else {
                     setTimeout(() => {
                         if (socket.connected) socket.emit('sendChatImage', dataUrl);
-                        else alert("Riconnessione in corso, riprova a inviare la foto.");
-                    }, 1500);
+                        else alert("Riconnessione in corso... riprova tra un secondo.");
+                    }, 1500); // Aspetta 1.5s per dare tempo al server di ricollegarsi
                 }
-            };
 
-            img.onerror = function() {
-                URL.revokeObjectURL(objectUrl);
-                alert("Errore: impossibile elaborare questa foto.");
-            };
+            } catch (error) {
+                console.error("Errore di memoria:", error);
+                alert("La foto è troppo pesante per il telefono. Riprova.");
+            }
 
-            img.src = objectUrl;
-            input.value = ""; // Resetta l'input
+            input.value = ""; // Resetta per foto future
         }
 
         socket.on('chatMessage', (data) => {
