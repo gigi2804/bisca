@@ -279,7 +279,7 @@
         socket.on('clearBlindCards', () => { isBlindModeActive = false; currentBlindCards = []; });
 
         socket.on('reconnectData', d => { 
-            isBlindModeActive = false; 
+            isBlindModeActive = d.isBlindModeActive || false; 
             switchToGameView(); 
             updateBonusUI(d.bonusInfo); 
             if(d.gameState==="PAUSED") document.getElementById('pause-overlay').style.display='flex'; 
