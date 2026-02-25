@@ -274,9 +274,9 @@
             
             let content = (data.id !== "SYS" ? `<div class="msg-name">${data.name}</div>` : "");
             
-            // Se è uno sticker, crea il tag <img> puntando alla cartella /stickers/
+            // Se è uno sticker, crea il tag <img> puntando alla cartella /sticker/
             if (data.type === 'sticker') {
-                content += `<img src="/stickers/${data.text}" style="max-width: 100%; border-radius: 5px; margin-top: 4px;">`;
+                content += `<img src="/sticker/${data.text}" style="max-width: 100%; border-radius: 5px; margin-top: 4px;">`;
             } else {
                 content += data.text; // Altrimenti testo normale
             }
