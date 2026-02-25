@@ -131,7 +131,7 @@
         
         <input type="text" id="chat-input" placeholder="Scrivi..." autocomplete="off" style="height: 42px; box-sizing: border-box; margin: 0;">
         
-        <button id="chat-send" onclick="sendChat()" style="height: 42px; box-sizing: border-box; margin: 0;">➤</button>
+        <button id="chat-send" onclick="sendChat()" style="height: 42px; box-sizing: border-box; margin: 0; align-items: center;">➤</button>
         
     </div>
 </div>
@@ -202,7 +202,7 @@
                 if (menu.innerHTML.trim() === '') {
                     myStickers.forEach(fileName => {
                         const img = document.createElement('img');
-                        img.src = `/stickers/${fileName}`;
+                        img.src = `/sticker/${fileName}`;
                         img.style.width = '60px';
                         img.style.height = '60px';
                         img.style.objectFit = 'contain';
