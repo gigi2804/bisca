@@ -182,9 +182,15 @@ io.on('connection', (socket) => {
           const room = rooms[sanitizedRoom];
           const ex = room.players.find(p => p.name === name);
           if (ex) {
-              if (room.disconnectTimers[name]) { clearTimeout(room.disconnectTimers[name]); delete room.disconnectTimers[name]; io.to(roomName).emit('chatMessage', { name: "SISTEMA", text: `✅ <b>${name}</b> è tornato!`, id: "SYS" }); }
-              if(room.restartVotes.has(ex.id)) { room.restartVotes.delete(ex.id); room.restartVotes.add(socket.id); }
-              ex.id = socket.id; ex.pendingRemoval = false;
+              if (room.disconnectTimers[name]) { 
+                clearTimeout(room.disconnectTimers[name]); 
+                delete room.disconnectTimers[name]; 
+                io.to(sanitizedRoom).emit('chatMessage', { name: "SISTEMA", text: `✅ <b>${name}</b> è tornato!`, id: "SYS" }); }
+              if(room.restartVotes.has(ex.id)) { 
+                room.restartVotes.delete(ex.id); 
+                room.restartVotes.add(socket.id); }
+              ex.id = socket.id; 
+              ex.pendingRemoval = false;
               
               const isBlind = (room.roundCardsCount === 1 && room.gameSettings.blindMode && room.gameState !== 'LOBBY');
               
@@ -202,7 +208,13 @@ io.on('connection', (socket) => {
                 isBlindModeActive: isBlind
             });
 
-              if (isBlind) socket.emit('blindRoundInfo', room.players.map(p => ({id: p.id, card: (p.lives > 0 && p.hand.length > 0) ? p.hand[0] : null})));
+              if (isBlind) {
+                io.to(sanitizedRoom).emit('blindRoundInfo', room.players.map(p => ({
+                    id: p.id, 
+                    card: (p.lives > 0 && p.hand.length > 0) ? p.hand[0] : null
+                })));
+              }
+              broadcastUpdate(sanitizedRoom);
               return;
           }
           let isSpectator = false;
