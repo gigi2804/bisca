@@ -123,6 +123,7 @@
         <div id="chat-sidebar" style="display:none;">
             <div id="chat-header">CHAT</div>
             <div id="chat-messages"></div>
+            <div id="sticker-menu" style="display:none; position:absolute; bottom:50px; left:0; width:100%; background:#222; border-top:1px solid #d4af37; padding:10px; box-sizing:border-box; flex-wrap:wrap; gap:5px; max-height:150px; overflow-y:auto; z-index:1001;"></div>
             <div id="chat-input-area">
                 <input type="text" id="chat-input" placeholder="Scrivi..." autocomplete="off">
                 <button id="chat-send" onclick="sendChat()">➤</button>
@@ -182,6 +183,40 @@
             if (audio.paused) { audio.volume = 0.3; audio.play().then(() => { btn.innerText = "🔊"; musicPlaying = true; }).catch(e => console.log(e)); } else { audio.pause(); btn.innerText = "🔇"; musicPlaying = false; }
         }
 
+        // --- GESTIONE STICKERS ---
+        // Inserisci qui i nomi dei tuoi file (es. 1.jpg, 2.png, 18.jpg)
+        const myStickers = ['18.jpg', '1.jpg', '2.jpg']; // <-- AGGIORNA QUESTA LISTA CON I TUOI FILE!
+        
+        function toggleStickers() {
+            const menu = document.getElementById('sticker-menu');
+            if (menu.style.display === 'none') {
+                menu.style.display = 'flex';
+                // Carica gli sticker nel DOM solo la prima volta
+                if (menu.innerHTML.trim() === '') {
+                    myStickers.forEach(fileName => {
+                        const img = document.createElement('img');
+                        img.src = `/stickers/${fileName}`;
+                        img.style.width = '60px';
+                        img.style.height = '60px';
+                        img.style.objectFit = 'contain';
+                        img.style.cursor = 'pointer';
+                        img.style.borderRadius = '5px';
+                        img.style.backgroundColor = '#111';
+                        img.onclick = () => sendSticker(fileName);
+                        menu.appendChild(img);
+                    });
+                }
+            } else {
+                menu.style.display = 'none';
+            }
+        }
+
+        function sendSticker(fileName) {
+            socket.emit('sendChat', { text: fileName, type: 'sticker' });
+            document.getElementById('sticker-menu').style.display = 'none'; // Chiudi il menu
+        }
+        // -------------------------
+
         socket.on('connect', () => { 
             myId = socket.id; 
             if(localStorage.getItem('bisca_username')) document.getElementById('username').value = localStorage.getItem('bisca_username');
@@ -212,7 +247,12 @@
         function sendChat() {
             const input = document.getElementById('chat-input');
             const txt = input.value.trim();
-            if(txt) { socket.emit('sendChat', txt); input.value = ''; input.focus(); }
+            if(txt) { 
+                // Ora inviamo un oggetto indicando che è testo
+                socket.emit('sendChat', { text: txt, type: 'text' }); 
+                input.value = ''; 
+                input.focus(); 
+            }
         }
         document.getElementById('chat-input').addEventListener("keypress", (e) => { if (e.key === "Enter") sendChat(); });
 
@@ -220,9 +260,23 @@
             const chatBox = document.getElementById('chat-messages');
             const div = document.createElement('div');
             div.className = (data.id === myId) ? 'msg msg-mine' : 'msg msg-other';
-            if(data.id === "SYS") { div.style.background = "transparent"; div.style.color = "#d4af37"; div.style.textAlign = "center"; div.style.border = "1px solid #d4af37"; }
-            div.innerHTML = (data.id !== "SYS" ? `<div class="msg-name">${data.name}</div>` : "") + data.text;
-            chatBox.appendChild(div); chatBox.scrollTop = chatBox.scrollHeight;
+            
+            if(data.id === "SYS") { 
+                div.style.background = "transparent"; div.style.color = "#d4af37"; div.style.textAlign = "center"; div.style.border = "1px solid #d4af37"; 
+            }
+            
+            let content = (data.id !== "SYS" ? `<div class="msg-name">${data.name}</div>` : "");
+            
+            // Se è uno sticker, crea il tag <img> puntando alla cartella /stickers/
+            if (data.type === 'sticker') {
+                content += `<img src="/stickers/${data.text}" style="max-width: 100%; border-radius: 5px; margin-top: 4px;">`;
+            } else {
+                content += data.text; // Altrimenti testo normale
+            }
+            
+            div.innerHTML = content;
+            chatBox.appendChild(div); 
+            chatBox.scrollTop = chatBox.scrollHeight;
         });
 
         function renderCard(c, isHand, idx, isBack = false) {
