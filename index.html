@@ -123,16 +123,14 @@
         <div id="chat-sidebar" style="display:none; position:relative;">
     <div id="chat-header">CHAT</div>
     <div id="chat-messages"></div>
-    <div id="sticker-menu" style="display:none; position:absolute; bottom:50px; left:0; width:100%; background:#222; border-top:1px solid #d4af37; padding:10px; box-sizing:border-box; flex-wrap:wrap; gap:5px; max-height:150px; overflow-y:auto; z-index:1001;"></div>
     
-    <div id="chat-input-area" style="align-items: center;">
+    <div id="chat-input-area" style="position: relative; align-items: center;">
+        
+        <div id="sticker-menu" style="display:none; position:absolute; bottom:100%; left:0; width:100%; background:#222; border-top:1px solid #d4af37; padding:10px; box-sizing:border-box; flex-wrap:wrap; gap:5px; max-height:150px; overflow-y:auto; z-index:1001;"></div>
         
         <button id="btn-sticker" onclick="toggleStickers()" style="width: 42px; height: 42px; background: #333; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 20px; padding: 0; flex-shrink: 0; display: flex; align-items: center; justify-content: center; box-sizing: border-box; margin: 0;">🤡</button>
-        
         <input type="text" id="chat-input" placeholder="Scrivi..." autocomplete="off" style="height: 42px; box-sizing: border-box; margin: 0;">
-        
-        <button id="chat-send" onclick="sendChat()" style="height: 42px; box-sizing: border-box; margin: 0; align-items: center;">➤</button>
-        
+        <button id="chat-send" onclick="sendChat()" style="height: 42px; box-sizing: border-box; margin: 0;">➤</button>
     </div>
 </div>
 </div>
@@ -276,7 +274,7 @@
             
             // Se è uno sticker, crea il tag <img> puntando alla cartella /sticker/
             if (data.type === 'sticker') {
-                content += `<img src="/sticker/${data.text}" style="max-width: 100%; border-radius: 5px; margin-top: 4px;">`;
+                content += `<img src="/sticker/${data.text}" style="width: 100px; height: auto; border-radius: 5px; margin-top: 4px; display: block;">`;
             } else {
                 content += data.text; // Altrimenti testo normale
             }
