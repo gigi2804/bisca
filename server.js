@@ -222,8 +222,21 @@ io.on('connection', (socket) => {
           if (room.players.length >= 8 && !isSpectator) return socket.emit('errorMsg', 'Tavolo Pieno! Massimo 8 giocatori.');
           if (!room.players.find(p => p.id === socket.id)) { room.players.push({ id: socket.id, name, lives: isSpectator ? 0 : 5, hand: [], bid: null, tricksWon: 0, isSpectator: isSpectator }); }
           if (isSpectator) {
-               socket.emit('reconnectData', { myId: socket.id, hand: [], gameState: room.gameState, isMyTurn: false, players: room.players.map(p => ({ id: p.id, name: p.name, lives: p.lives, lastBid: p.bid, lastWon: p.tricksWon })), table: room.tableCards, phase: room.gameState, roundCards: room.roundCardsCount, bonusInfo: { used: room.bonusLifeUsed, by: room.bonusUsedBy }, isHost: false });
-               if (room.roundCardsCount === 1 && room.gameSettings.blindMode) socket.emit('blindRoundInfo', room.players.map(p => ({id: p.id, card: (p.lives > 0 && p.hand.length > 0) ? p.hand[0] : null})));
+            const isBlind = (room.roundCardsCount === 1 && room.gameSettings.blindMode && room.gameState !== 'LOBBY');
+               socket.emit('reconnectData', { 
+                myId: socket.id, 
+                hand: [], 
+                gameState: room.gameState, 
+                isMyTurn: false, 
+                players: room.players.map(p => ({ id: p.id, name: p.name, lives: p.lives, lastBid: p.bid, lastWon: p.tricksWon })), 
+                table: room.tableCards, 
+                phase: room.gameState, 
+                roundCards: room.roundCardsCount, 
+                bonusInfo: { used: room.bonusLifeUsed, by: room.bonusUsedBy }, 
+                isHost: false,
+                isBlindModeActive: isBlind 
+            });
+               if (isBlind) socket.emit('blindRoundInfo', room.players.map(p => ({id: p.id, card: (p.lives > 0 && p.hand.length > 0) ? p.hand[0] : null})));
           }
           broadcastUpdate(sanitizedRoom);
       } catch(e) { console.error(e); }
