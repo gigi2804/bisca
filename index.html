@@ -287,7 +287,7 @@
             renderTable(d.players); 
             const handDiv = document.getElementById('my-hand'); 
             handDiv.innerHTML = '';
-            if(d.hand && d.hand.length > 0) { d.hand.forEach((c, i) => handDiv.appendChild(renderCard(c, true, i))); }
+            if(d.hand && d.hand.length > 0) { d.hand.forEach((c, i) => handDiv.appendChild(renderCard(c, true, i, isBlindModeActive))); }
             handDiv.style.opacity = 1;
             updateTable(d.table); 
             updateTurn(d.isMyTurn, d.phase, d.roundCards); 
