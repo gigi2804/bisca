@@ -121,13 +121,13 @@
         </div>
 
         <div id="chat-sidebar" style="display:none; position:relative;">
-    <div id="chat-header">CHAT</div>
-    <div id="chat-messages"></div>
+        <div id="chat-header">CHAT</div>
+        <div id="chat-messages"></div>
     
-    <div id="chat-input-area" style="position: relative; align-items: center;">
+        <div id="chat-input-area" style="position: relative; align-items: center;">
         
         <div id="sticker-menu" style="display:none; position:absolute; bottom:100%; left:0; width:100%; background:#222; border-top:1px solid #d4af37; padding:10px; box-sizing:border-box; flex-wrap:wrap; gap:5px; max-height:150px; overflow-y:auto; z-index:1001;"></div>
-        
+        <button id="btn-camera" onclick="document.getElementById('camera-input').click()" style="width: 42px; height: 42px; background: #333; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 20px; padding: 0; flex-shrink: 0; display: flex; align-items: center; justify-content: center; box-sizing: border-box; margin: 0; margin-right: 2px;">📷</button>
         <button id="btn-sticker" onclick="toggleStickers()" style="width: 42px; height: 42px; background: #333; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 20px; padding: 0; flex-shrink: 0; display: flex; align-items: center; justify-content: center; box-sizing: border-box; margin: 0;">🤡</button>
         <input type="text" id="chat-input" placeholder="Scrivi..." autocomplete="off" style="height: 42px; box-sizing: border-box; margin: 0;">
         <button id="chat-send" onclick="sendChat()" style="height: 42px; box-sizing: border-box; margin: 0;">➤</button>
@@ -278,6 +278,48 @@
         }
         document.getElementById('chat-input').addEventListener("keypress", (e) => { if (e.key === "Enter") sendChat(); });
 
+        function sendPhoto(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    // Creiamo una tela (canvas) per rimpicciolire l'immagine
+                    const canvas = document.createElement('canvas');
+                    const MAX_WIDTH = 600; // Larghezza massima (ottima per la chat)
+                    const MAX_HEIGHT = 600;
+                    let width = img.width;
+                    let height = img.height;
+
+                    // Calcolo delle proporzioni per non deformare la foto
+                    if (width > height) {
+                        if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
+                    } else {
+                        if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    // Convertiamo in formato testuale compresso (JPEG al 70% di qualità)
+                    const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+
+                    // Inviamo al server dicendo che è una 'photo'
+                    socket.emit('sendChat', { text: compressedDataUrl, type: 'photo' });
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+            
+            // Resettiamo l'input così puoi mandare anche due foto di fila uguali
+            event.target.value = '';
+        }
+
+
         socket.on('chatMessage', (data) => {
             const chatBox = document.getElementById('chat-messages');
             const div = document.createElement('div');
@@ -289,11 +331,17 @@
             
             let content = (data.id !== "SYS" ? `<div class="msg-name">${data.name}</div>` : "");
             
-            // Se è uno sticker, crea il tag <img> puntando alla cartella /sticker/
+            // Se è uno sticker carica dalla cartella
             if (data.type === 'sticker') {
                 content += `<img src="/sticker/${data.text}" style="width: 100px; height: auto; border-radius: 5px; margin-top: 4px; display: block;">`;
-            } else {
-                content += data.text; // Altrimenti testo normale
+            } 
+            // Se è una foto scattata, carica i dati compressi inviati
+            else if (data.type === 'photo') {
+                content += `<img src="${data.text}" style="max-width: 100%; max-height: 250px; object-fit: contain; border-radius: 8px; margin-top: 5px; display: block; border: 1px solid #444;">`;
+            } 
+            // Altrimenti è testo normale
+            else {
+                content += data.text; 
             }
             
             div.innerHTML = content;
