@@ -289,40 +289,51 @@
             const file = event.target.files[0];
             if (!file) return;
 
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const img = new Image();
-                img.onload = function() {
-                    // Creiamo una tela (canvas) per rimpicciolire l'immagine
-                    const canvas = document.createElement('canvas');
-                    const MAX_WIDTH = 600; // Larghezza massima (ottima per la chat)
-                    const MAX_HEIGHT = 600;
-                    let width = img.width;
-                    let height = img.height;
+            // Creiamo un collegamento "leggero" invece di caricare l'intero file in memoria
+            const objectUrl = URL.createObjectURL(file);
+            const img = new Image();
 
-                    // Calcolo delle proporzioni per non deformare la foto
-                    if (width > height) {
-                        if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
-                    } else {
-                        if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; }
-                    }
+            img.onload = function() {
+                // 1. Libera IMMEDIATAMENTE la memoria occupata dall'immagine originale
+                URL.revokeObjectURL(objectUrl);
 
-                    canvas.width = width;
-                    canvas.height = height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, width, height);
+                const canvas = document.createElement('canvas');
+                const MAX_WIDTH = 600;
+                const MAX_HEIGHT = 600;
+                let width = img.width;
+                let height = img.height;
 
-                    // Convertiamo in formato testuale compresso (JPEG al 70% di qualità)
-                    const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                // Calcolo proporzioni
+                if (width > height) {
+                    if (width > MAX_WIDTH) { height *= Math.round(MAX_WIDTH / width); width = MAX_WIDTH; }
+                } else {
+                    if (height > MAX_HEIGHT) { width *= Math.round(MAX_HEIGHT / height); height = MAX_HEIGHT; }
+                }
 
-                    // Inviamo al server dicendo che è una 'photo'
-                    socket.emit('sendChat', { text: compressedDataUrl, type: 'photo' });
-                };
-                img.src = e.target.result;
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                // 2. Comprimiamo (Qualità a 0.6 per essere ancora più leggeri sulla rete)
+                const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
+
+                socket.emit('sendChat', { text: compressedDataUrl, type: 'photo' });
+                
+                // 3. Distruggiamo il canvas per liberare ulteriore RAM
+                canvas.width = 0;
+                canvas.height = 0;
             };
-            reader.readAsDataURL(file);
             
-            // Resettiamo l'input così puoi mandare anche due foto di fila uguali
+            // Fallback in caso di errore di lettura
+            img.onerror = function() {
+                URL.revokeObjectURL(objectUrl);
+                alert("Errore nel caricamento della foto. Riprova.");
+            };
+
+            img.src = objectUrl;
+            
+            // Resetta l'input
             event.target.value = '';
         }
 
