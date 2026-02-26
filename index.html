@@ -289,52 +289,50 @@
             const file = event.target.files[0];
             if (!file) return;
 
-            const objectUrl = URL.createObjectURL(file);
-            const img = new Image();
+            const MAX_WIDTH = 600;
+            const MAX_HEIGHT = 600;
 
-            img.onload = function() {
-                const canvas = document.createElement('canvas');
-                const MAX_WIDTH = 600;
-                const MAX_HEIGHT = 600;
-                let width = img.width;
-                let height = img.height;
+            // Utilizziamo l'API moderna e salva-RAM se il browser la supporta
+            if (window.createImageBitmap) {
+                window.createImageBitmap(file).then(bitmap => {
+                    let width = bitmap.width;
+                    let height = bitmap.height;
 
-                // IL FIX MATEMATICO: l'arrotondamento va fatto alla fine della moltiplicazione!
-                if (width > height) {
-                    if (width > MAX_WIDTH) { 
-                        height = Math.round(height * (MAX_WIDTH / width)); 
-                        width = MAX_WIDTH; 
+                    if (width > height) {
+                        if (width > MAX_WIDTH) { 
+                            height = Math.round(height * (MAX_WIDTH / width)); 
+                            width = MAX_WIDTH; 
+                        }
+                    } else {
+                        if (height > MAX_HEIGHT) { 
+                            width = Math.round(width * (MAX_HEIGHT / height)); 
+                            height = MAX_HEIGHT; 
+                        }
                     }
-                } else {
-                    if (height > MAX_HEIGHT) { 
-                        width = Math.round(width * (MAX_HEIGHT / height)); 
-                        height = MAX_HEIGHT; 
-                    }
-                }
 
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    
+                    ctx.drawImage(bitmap, 0, 0, width, height);
+                    const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
+                    
+                    socket.emit('sendChat', { text: compressedDataUrl, type: 'photo' });
 
-                const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
-                
-                // Invio al server
-                socket.emit('sendChat', { text: compressedDataUrl, type: 'photo' });
+                    // Distruggiamo tutto per pulire immediatamente la memoria!
+                    bitmap.close();
+                    canvas.width = 0;
+                    canvas.height = 0;
+                    event.target.value = '';
 
-                // Svuotiamo la RAM solo DOPO aver compresso l'immagine
-                URL.revokeObjectURL(objectUrl);
-                canvas.width = 0;
-                canvas.height = 0;
-            };
-
-            img.onerror = function() {
-                URL.revokeObjectURL(objectUrl);
-                alert("Errore nel caricamento della foto. Riprova.");
-            };
-
-            img.src = objectUrl;
-            event.target.value = '';
+                }).catch(err => {
+                    alert("Errore nell'elaborazione del selfie. Riprova.");
+                    console.error(err);
+                });
+            } else {
+                alert("Il tuo browser non supporta la compressione avanzata delle foto.");
+            }
         }
 
 
