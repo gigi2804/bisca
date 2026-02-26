@@ -273,18 +273,6 @@
         function voteRestart() { socket.emit('voteRestart'); }
         function joinGameFromLobby() { socket.emit('switchRole', true); }
 
-        // Funzione per sterilizzare il testo e prevenire attacchi XSS
-    function escapeHTML(str) {
-        if (!str) return '';
-        return str.replace(/[&<>'"]/g, tag => ({
-            '&': '&amp;',
-            '<': '&lt;',
-            '>': '&gt;',
-            "'": '&#39;',
-            '"': '&quot;'
-        }[tag] || tag));
-    }
-
         function sendChat() {
             const input = document.getElementById('chat-input');
             const txt = input.value.trim();
@@ -369,7 +357,7 @@
             } 
             // Altrimenti è testo normale
             else {
-                content += escapeHTML(data.text); 
+                content += data.text; 
             }
             
             div.innerHTML = content;

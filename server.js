@@ -267,39 +267,21 @@ io.on('connection', (socket) => {
 
   socket.on('togglePause', () => { const r=rooms[socket.roomName]; if(!r)return; if(r.gameState==="PAUSED"){r.gameState=r.previousState; io.to(socket.roomName).emit('gamePaused',false); updateGameState(socket.roomName);} else {r.previousState=r.gameState; r.gameState="PAUSED"; io.to(socket.roomName).emit('gamePaused',true);} });
   
-  socket.on('sendChat', (data) => {
-            // 1. Controllo di base: i dati esistono e il testo è davvero una stringa?
-            if (!data || typeof data.text !== 'string') return;
-
-            // 2. Controllo per i messaggi di testo (Limite: 500 caratteri)
-            if (!data.type || data.type === 'text') {
-                if (data.text.length > 500) {
-                    // Se scrivono un poema, tagliamo l'eccesso invece di bloccarlo
-                    data.text = data.text.substring(0, 500); 
-                }
-            }
-            
-            // 3. Controllo per le foto (Limite: ~800.000 caratteri)
-            // La tua funzione di compressione a 600px crea stringhe da circa 100-200KB.
-            // Se qualcuno manda una stringa di 1 milione di caratteri, è sicuramente un attacco.
-            else if (data.type === 'photo') {
-                if (data.text.length > 800000) {
-                    console.log("⚠️ Bloccato tentativo di invio payload gigante!");
-                    return; // Il "return" ferma tutto: il messaggio NON viene inoltrato
-                }
-            }
-
-            // 4. Controllo per gli sticker (Limite: 50 caratteri)
-            // Uno sticker è solo il nome del file (es. 'risata.webp'), non serve più spazio.
-            else if (data.type === 'sticker') {
-                if (data.text.length > 50) {
-                    return; 
-                }
-            }
-
-            // Se il messaggio è sopravvissuto a tutti i controlli, lo inoltriamo alla stanza!
-            io.emit('chatMessage', data);
+  socket.on('sendChat', (data) => { 
+    const r=rooms[socket.roomName]; 
+    if(!r)return; 
+    const p=r.players.find(x=>x.id===socket.id); 
+    if(p) {
+        const msgText = typeof data === 'object' ? data.text : data;
+        const msgType = typeof data === 'object' ? data.type : 'text';
+        io.to(socket.roomName).emit('chatMessage',{
+            name:p.name,
+            text:msgText,
+            type:msgType,
+            id:p.id
         });
+     }
+    });
   
   socket.on('placeBid', (bid) => { try { const roomName = socket.roomName; if (!roomName || !rooms[roomName]) return; const room = rooms[roomName]; if(room.gameState==="PAUSED" || !room.players[room.currentPlayerIndex] || room.players[room.currentPlayerIndex].id !== socket.id) return; if(room.currentPlayerIndex === room.dealerIndex && room.players.filter(p=>p.lives>0).reduce((s,p)=>s+(p.bid||0),0)+bid===room.roundCardsCount) return socket.emit('warning', "⚠️ Il mazziere non può chiamare questo numero!"); room.players.find(p=>p.id===socket.id).bid = bid; broadcastUpdate(roomName); nextTurn(roomName, 'BIDDING'); } catch(e) { console.error(e); } });
   
