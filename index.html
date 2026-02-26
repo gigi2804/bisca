@@ -289,25 +289,27 @@
             const file = event.target.files[0];
             if (!file) return;
 
-            // Creiamo un collegamento "leggero" invece di caricare l'intero file in memoria
             const objectUrl = URL.createObjectURL(file);
             const img = new Image();
 
             img.onload = function() {
-                // 1. Libera IMMEDIATAMENTE la memoria occupata dall'immagine originale
-                URL.revokeObjectURL(objectUrl);
-
                 const canvas = document.createElement('canvas');
                 const MAX_WIDTH = 600;
                 const MAX_HEIGHT = 600;
                 let width = img.width;
                 let height = img.height;
 
-                // Calcolo proporzioni
+                // IL FIX MATEMATICO: l'arrotondamento va fatto alla fine della moltiplicazione!
                 if (width > height) {
-                    if (width > MAX_WIDTH) { height *= Math.round(MAX_WIDTH / width); width = MAX_WIDTH; }
+                    if (width > MAX_WIDTH) { 
+                        height = Math.round(height * (MAX_WIDTH / width)); 
+                        width = MAX_WIDTH; 
+                    }
                 } else {
-                    if (height > MAX_HEIGHT) { width *= Math.round(MAX_HEIGHT / height); height = MAX_HEIGHT; }
+                    if (height > MAX_HEIGHT) { 
+                        width = Math.round(width * (MAX_HEIGHT / height)); 
+                        height = MAX_HEIGHT; 
+                    }
                 }
 
                 canvas.width = width;
@@ -315,25 +317,23 @@
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, width, height);
 
-                // 2. Comprimiamo (Qualità a 0.6 per essere ancora più leggeri sulla rete)
                 const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
-
-                socket.emit('sendChat', { text: compressedDataUrl, type: 'photo' });
                 
-                // 3. Distruggiamo il canvas per liberare ulteriore RAM
+                // Invio al server
+                socket.emit('sendChat', { text: compressedDataUrl, type: 'photo' });
+
+                // Svuotiamo la RAM solo DOPO aver compresso l'immagine
+                URL.revokeObjectURL(objectUrl);
                 canvas.width = 0;
                 canvas.height = 0;
             };
-            
-            // Fallback in caso di errore di lettura
+
             img.onerror = function() {
                 URL.revokeObjectURL(objectUrl);
                 alert("Errore nel caricamento della foto. Riprova.");
             };
 
             img.src = objectUrl;
-            
-            // Resetta l'input
             event.target.value = '';
         }
 
