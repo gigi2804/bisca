@@ -267,21 +267,36 @@ io.on('connection', (socket) => {
 
   socket.on('togglePause', () => { const r=rooms[socket.roomName]; if(!r)return; if(r.gameState==="PAUSED"){r.gameState=r.previousState; io.to(socket.roomName).emit('gamePaused',false); updateGameState(socket.roomName);} else {r.previousState=r.gameState; r.gameState="PAUSED"; io.to(socket.roomName).emit('gamePaused',true);} });
   
-  socket.on('sendChat', (data) => { 
-    const r=rooms[socket.roomName]; 
-    if(!r)return; 
-    const p=r.players.find(x=>x.id===socket.id); 
-    if(p) {
-        const msgText = typeof data === 'object' ? data.text : data;
-        const msgType = typeof data === 'object' ? data.type : 'text';
-        io.to(socket.roomName).emit('chatMessage',{
-            name:p.name,
-            text:msgText,
-            type:msgType,
-            id:p.id
+  socket.on('sendChat', (data) => {
+            if (!data || typeof data.text !== 'string') return;
+            
+            // 1. TROVARE IL NOME DEL GIOCATORE
+            const roomName = socket.roomName; // Questo l'avevi salvato in 'join'
+            if (!roomName || !rooms[roomName]) return; // Se non è in una stanza, ignora
+            
+            const room = rooms[roomName];
+            const player = room.players.find(p => p.id === socket.id);
+            const playerName = player ? player.name : "Sconosciuto";
+
+            // 2. CONTROLLI DI SICUREZZA (Anti-DoS)
+            if (!data.type || data.type === 'text') {
+                if (data.text.length > 500) data.text = data.text.substring(0, 500); 
+            }
+            else if (data.type === 'photo') {
+                if (data.text.length > 800000) return; // Blocca payload giganti
+            }
+            else if (data.type === 'sticker') {
+                if (data.text.length > 50) return; 
+            }
+
+            // 3. INOLTRA IL MESSAGGIO ALLA STANZA (aggiungendo nome e ID)
+            io.to(roomName).emit('chatMessage', {
+                name: playerName,
+                text: data.text,
+                type: data.type || 'text', // Se è undefined, assumiamo sia testo normale
+                id: socket.id
+            });
         });
-     }
-    });
   
   socket.on('placeBid', (bid) => { try { const roomName = socket.roomName; if (!roomName || !rooms[roomName]) return; const room = rooms[roomName]; if(room.gameState==="PAUSED" || !room.players[room.currentPlayerIndex] || room.players[room.currentPlayerIndex].id !== socket.id) return; if(room.currentPlayerIndex === room.dealerIndex && room.players.filter(p=>p.lives>0).reduce((s,p)=>s+(p.bid||0),0)+bid===room.roundCardsCount) return socket.emit('warning', "⚠️ Il mazziere non può chiamare questo numero!"); room.players.find(p=>p.id===socket.id).bid = bid; broadcastUpdate(roomName); nextTurn(roomName, 'BIDDING'); } catch(e) { console.error(e); } });
   

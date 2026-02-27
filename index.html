@@ -273,6 +273,18 @@
         function voteRestart() { socket.emit('voteRestart'); }
         function joinGameFromLobby() { socket.emit('switchRole', true); }
 
+        // Funzione per sterilizzare il testo e prevenire attacchi XSS
+    function escapeHTML(str) {
+        if (!str) return '';
+        return str.replace(/[&<>'"]/g, tag => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            "'": '&#39;',
+            '"': '&quot;'
+        }[tag] || tag));
+    }
+
         function sendChat() {
             const input = document.getElementById('chat-input');
             const txt = input.value.trim();
@@ -337,32 +349,28 @@
 
 
         socket.on('chatMessage', (data) => {
-            const chatBox = document.getElementById('chat-messages');
-            const div = document.createElement('div');
-            div.className = (data.id === myId) ? 'msg msg-mine' : 'msg msg-other';
+            const chatMessages = document.getElementById('chat-messages');
+            const msgDiv = document.createElement('div');
             
-            if(data.id === "SYS") { 
-                div.style.background = "transparent"; div.style.color = "#d4af37"; div.style.textAlign = "center"; div.style.border = "1px solid #d4af37"; 
-            }
-            
+            // Se hai classi CSS specifiche per il contenitore del messaggio, aggiungile qui
+            // es: msgDiv.className = 'chat-message-container';
+
+            // 1. IL TUO CODICE PER IL NOME
             let content = (data.id !== "SYS" ? `<div class="msg-name">${data.name}</div>` : "");
-            
-            // Se è uno sticker carica dalla cartella
+
+            // 2. LA NOSTRA LOGICA PER IL CONTENUTO (Testo, Foto o Sticker)
             if (data.type === 'sticker') {
                 content += `<img src="/sticker/${data.text}" style="width: 100px; height: auto; border-radius: 5px; margin-top: 4px; display: block;">`;
-            } 
-            // Se è una foto scattata, carica i dati compressi inviati
-            else if (data.type === 'photo') {
+            } else if (data.type === 'photo') {
                 content += `<img src="${data.text}" style="max-width: 100%; max-height: 250px; object-fit: contain; border-radius: 8px; margin-top: 5px; display: block; border: 1px solid #444;">`;
-            } 
-            // Altrimenti è testo normale
-            else {
-                content += data.text; 
+            } else {
+                content += escapeHTML(data.text); // XSS Shield attivo!
             }
-            
-            div.innerHTML = content;
-            chatBox.appendChild(div); 
-            chatBox.scrollTop = chatBox.scrollHeight;
+
+            // 3. STAMPA E SCORRI GIÙ
+            msgDiv.innerHTML = content;
+            chatMessages.appendChild(msgDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
         });
 
         function renderCard(c, isHand, idx, isBack = false) {
