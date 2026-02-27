@@ -282,8 +282,13 @@ io.on('connection', (socket) => {
             if (!data.type || data.type === 'text') {
                 if (data.text.length > 500) data.text = data.text.substring(0, 500); 
             }
+            // 3. Controllo per le foto
             else if (data.type === 'photo') {
-                if (data.text.length > 3000000) return; // Blocca payload giganti
+                // Stampiamo nel terminale del server la grandezza reale della foto!
+                console.log("📷 Ricevuta foto di grandezza: " + data.text.length + " caratteri");
+                
+                // DISATTIVIAMO momentaneamente il blocco mettendo due barre davanti
+                // if (data.text.length > 3000000) return; 
             }
             else if (data.type === 'sticker') {
                 if (data.text.length > 50) return; 
