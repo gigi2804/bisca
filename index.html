@@ -301,49 +301,62 @@
             const file = event.target.files[0];
             if (!file) return;
 
-            const MAX_WIDTH = 600;
-            const MAX_HEIGHT = 600;
-
-            // Utilizziamo l'API moderna e salva-RAM se il browser la supporta
+            // Chiediamo al sistema operativo di decodificare l'immagine già rimpicciolita a 800px.
+            // Questo azzera il rischio di crash di memoria per le foto giganti della fotocamera esterna!
             if (window.createImageBitmap) {
-                window.createImageBitmap(file).then(bitmap => {
-                    let width = bitmap.width;
-                    let height = bitmap.height;
-
-                    if (width > height) {
-                        if (width > MAX_WIDTH) { 
-                            height = Math.round(height * (MAX_WIDTH / width)); 
-                            width = MAX_WIDTH; 
-                        }
-                    } else {
-                        if (height > MAX_HEIGHT) { 
-                            width = Math.round(width * (MAX_HEIGHT / height)); 
-                            height = MAX_HEIGHT; 
-                        }
-                    }
-
+                window.createImageBitmap(file, { resizeWidth: 800 }).then(bitmap => {
                     const canvas = document.createElement('canvas');
-                    canvas.width = width;
-                    canvas.height = height;
+                    
+                    // L'immagine è già stata rimpicciolita proporzionalmente dal telefono
+                    canvas.width = bitmap.width;
+                    canvas.height = bitmap.height;
+                    
                     const ctx = canvas.getContext('2d');
+                    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
                     
-                    ctx.drawImage(bitmap, 0, 0, width, height);
+                    // Comprimiamo in JPEG al 60%
                     const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
-                    
                     socket.emit('sendChat', { text: compressedDataUrl, type: 'photo' });
 
-                    // Distruggiamo tutto per pulire immediatamente la memoria!
+                    // Pulizia istantanea
                     bitmap.close();
-                    canvas.width = 0;
-                    canvas.height = 0;
+                    canvas.width = 0; canvas.height = 0;
                     event.target.value = '';
 
                 }).catch(err => {
-                    alert("Errore nell'elaborazione del selfie. Riprova.");
-                    console.error(err);
+                    // Se il formato è strano (es. HEIC di alcuni iPhone), usiamo il paracadute
+                    fallbackSendPhoto(file);
                 });
             } else {
-                alert("Il tuo browser non supporta la compressione avanzata delle foto.");
+                fallbackSendPhoto(file);
+            }
+
+            // --- PARACADUTE DI EMERGENZA (Metodo Classico) ---
+            function fallbackSendPhoto(f) {
+                const objectUrl = URL.createObjectURL(f);
+                const img = new Image();
+                img.onload = function() {
+                    URL.revokeObjectURL(objectUrl); // Libera la memoria
+                    let w = img.width, h = img.height;
+                    
+                    if (w > h && w > 800) { h = Math.round(h * (800 / w)); w = 800; }
+                    else if (h > w && h > 800) { w = Math.round(w * (800 / h)); h = 800; }
+                    
+                    const canvas = document.createElement('canvas');
+                    canvas.width = w; canvas.height = h;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, w, h);
+                    
+                    socket.emit('sendChat', { text: canvas.toDataURL('image/jpeg', 0.6), type: 'photo' });
+                    
+                    canvas.width = 0; canvas.height = 0;
+                };
+                img.onerror = function() {
+                    URL.revokeObjectURL(objectUrl);
+                    alert("Ops! Formato foto non supportato.");
+                };
+                img.src = objectUrl;
+                event.target.value = '';
             }
         }
 

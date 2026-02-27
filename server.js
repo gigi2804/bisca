@@ -286,9 +286,7 @@ io.on('connection', (socket) => {
             else if (data.type === 'photo') {
                 // Stampiamo nel terminale del server la grandezza reale della foto!
                 console.log("📷 Ricevuta foto di grandezza: " + data.text.length + " caratteri");
-                
-                // DISATTIVIAMO momentaneamente il blocco mettendo due barre davanti
-                // if (data.text.length > 3000000) return; 
+                if (data.text.length > 3000000) return; 
             }
             else if (data.type === 'sticker') {
                 if (data.text.length > 50) return; 
