@@ -299,68 +299,52 @@
 
         function sendPhoto(event) {
             const file = event.target.files[0];
-            
-            // 1. SBLOCCO IMMEDIATO: Resettiamo il bottone prima di fare qualsiasi altra cosa!
-            // Così, anche se il telefono dovesse esplodere, il bottone funzionerà sempre al prossimo click.
-            event.target.value = '';
-            
             if (!file) return;
 
-            const objectUrl = URL.createObjectURL(file);
-            const img = new Image();
+            const MAX_WIDTH = 600;
+            const MAX_HEIGHT = 600;
 
-            img.onload = function() {
-                try {
-                    const canvas = document.createElement('canvas');
-                    let width = img.width;
-                    let height = img.height;
-                    const MAX_SIZE = 800; // Ottimo compromesso qualità/peso
+            // Utilizziamo l'API moderna e salva-RAM se il browser la supporta
+            if (window.createImageBitmap) {
+                window.createImageBitmap(file).then(bitmap => {
+                    let width = bitmap.width;
+                    let height = bitmap.height;
 
-                    // Calcolo delle proporzioni
                     if (width > height) {
-                        if (width > MAX_SIZE) {
-                            height = Math.round(height * (MAX_SIZE / width));
-                            width = MAX_SIZE;
+                        if (width > MAX_WIDTH) { 
+                            height = Math.round(height * (MAX_WIDTH / width)); 
+                            width = MAX_WIDTH; 
                         }
                     } else {
-                        if (height > MAX_SIZE) {
-                            width = Math.round(width * (MAX_SIZE / height));
-                            height = MAX_SIZE;
+                        if (height > MAX_HEIGHT) { 
+                            width = Math.round(width * (MAX_HEIGHT / height)); 
+                            height = MAX_HEIGHT; 
                         }
                     }
 
+                    const canvas = document.createElement('canvas');
                     canvas.width = width;
                     canvas.height = height;
                     const ctx = canvas.getContext('2d');
                     
-                    // 2. Disegniamo l'immagine sul canvas
-                    ctx.drawImage(img, 0, 0, width, height);
-
-                    // 3. PULIZIA MEMORIA: Ora che abbiamo disegnato, possiamo buttare l'originale
-                    URL.revokeObjectURL(objectUrl);
-
-                    // 4. Compressione e invio
-                    const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
-                    socket.emit('sendChat', { text: dataUrl, type: 'photo' });
+                    ctx.drawImage(bitmap, 0, 0, width, height);
+                    const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
                     
-                    // Svuotiamo il canvas per liberare altra RAM
+                    socket.emit('sendChat', { text: compressedDataUrl, type: 'photo' });
+
+                    // Distruggiamo tutto per pulire immediatamente la memoria!
+                    bitmap.close();
                     canvas.width = 0;
                     canvas.height = 0;
+                    event.target.value = '';
 
-                } catch (error) {
-                    // SCUDO ANTI-CRASH: Se il telefono va in panico, mostriamo un errore ma non blocchiamo il gioco!
-                    console.error("Crash sventato:", error);
-                    alert("Questa foto era troppo pesante per il browser. Prova a togliere i filtri o scattare di nuovo.");
-                    URL.revokeObjectURL(objectUrl);
-                }
-            };
-
-            img.onerror = function() {
-                URL.revokeObjectURL(objectUrl);
-                alert("Ops! C'è stato un problema a leggere il file. Riprova.");
-            };
-
-            img.src = objectUrl;
+                }).catch(err => {
+                    alert("Errore nell'elaborazione del selfie. Riprova.");
+                    console.error(err);
+                });
+            } else {
+                alert("Il tuo browser non supporta la compressione avanzata delle foto.");
+            }
         }
 
 
