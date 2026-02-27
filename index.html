@@ -352,22 +352,25 @@
             const chatMessages = document.getElementById('chat-messages');
             const msgDiv = document.createElement('div');
             
-            // Se hai classi CSS specifiche per il contenitore del messaggio, aggiungile qui
-            // es: msgDiv.className = 'chat-message-container';
+            // ECCO IL TUO CODICE ORIGINALE PER I RIQUADRI!
+            if (data.id === "SYS") {
+                msgDiv.className = 'msg msg-sys'; // (O qualunque classe tu usassi per il sistema)
+            } else {
+                msgDiv.className = (data.id === myId) ? 'msg msg-mine' : 'msg msg-other';
+            }
 
-            // 1. IL TUO CODICE PER IL NOME
+            // Il tuo codice per il nome
             let content = (data.id !== "SYS" ? `<div class="msg-name">${data.name}</div>` : "");
 
-            // 2. LA NOSTRA LOGICA PER IL CONTENUTO (Testo, Foto o Sticker)
+            // La logica per i contenuti multimediali e la sicurezza XSS
             if (data.type === 'sticker') {
                 content += `<img src="/sticker/${data.text}" style="width: 100px; height: auto; border-radius: 5px; margin-top: 4px; display: block;">`;
             } else if (data.type === 'photo') {
-                content += `<img src="${data.text}" style="max-width: 100%; max-height: 250px; object-fit: contain; border-radius: 8px; margin-top: 5px; display: block; border: 1px solid #444;">`;
+                content += `<img src="${data.text}" style="max-width: 100%; max-height: 250px; object-fit: contain; border-radius: 8px; margin-top: 5px; display: block;">`;
             } else {
-                content += escapeHTML(data.text); // XSS Shield attivo!
+                content += escapeHTML(data.text);
             }
 
-            // 3. STAMPA E SCORRI GIÙ
             msgDiv.innerHTML = content;
             chatMessages.appendChild(msgDiv);
             chatMessages.scrollTop = chatMessages.scrollHeight;

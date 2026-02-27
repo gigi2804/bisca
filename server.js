@@ -283,7 +283,7 @@ io.on('connection', (socket) => {
                 if (data.text.length > 500) data.text = data.text.substring(0, 500); 
             }
             else if (data.type === 'photo') {
-                if (data.text.length > 800000) return; // Blocca payload giganti
+                if (data.text.length > 3000000) return; // Blocca payload giganti
             }
             else if (data.type === 'sticker') {
                 if (data.text.length > 50) return; 
