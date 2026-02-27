@@ -368,7 +368,13 @@
             } else if (data.type === 'photo') {
                 content += `<img src="${data.text}" style="max-width: 100%; max-height: 250px; object-fit: contain; border-radius: 8px; margin-top: 5px; display: block;">`;
             } else {
-                content += escapeHTML(data.text);
+                if (data.id === "SYS") {
+                    // È il server che parla! Lasciamo passare l'HTML intatto (colori, grassetti, ecc.)
+                    content += data.text; 
+                } else {
+                    // È un giocatore! Applichiamo lo scudo di sicurezza XSS
+                    content += escapeHTML(data.text); 
+                }
             }
 
             msgDiv.innerHTML = content;
