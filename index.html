@@ -301,63 +301,52 @@
             const file = event.target.files[0];
             if (!file) return;
 
-            // Chiediamo al sistema operativo di decodificare l'immagine già rimpicciolita a 800px.
-            // Questo azzera il rischio di crash di memoria per le foto giganti della fotocamera esterna!
-            if (window.createImageBitmap) {
-                window.createImageBitmap(file, { resizeWidth: 800 }).then(bitmap => {
-                    const canvas = document.createElement('canvas');
-                    
-                    // L'immagine è già stata rimpicciolita proporzionalmente dal telefono
-                    canvas.width = bitmap.width;
-                    canvas.height = bitmap.height;
-                    
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-                    
-                    // Comprimiamo in JPEG al 60%
-                    const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
-                    socket.emit('sendChat', { text: compressedDataUrl, type: 'photo' });
+            const objectUrl = URL.createObjectURL(file);
+            const img = new Image();
 
-                    // Pulizia istantanea
-                    bitmap.close();
-                    canvas.width = 0; canvas.height = 0;
-                    event.target.value = '';
+            img.onload = function() {
+                // Svuota la memoria occupata dal file originale
+                URL.revokeObjectURL(objectUrl);
 
-                }).catch(err => {
-                    // Se il formato è strano (es. HEIC di alcuni iPhone), usiamo il paracadute
-                    fallbackSendPhoto(file);
-                });
-            } else {
-                fallbackSendPhoto(file);
-            }
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+                const MAX_SIZE = 800; // Ottimo compromesso tra qualità e leggerezza
 
-            // --- PARACADUTE DI EMERGENZA (Metodo Classico) ---
-            function fallbackSendPhoto(f) {
-                const objectUrl = URL.createObjectURL(f);
-                const img = new Image();
-                img.onload = function() {
-                    URL.revokeObjectURL(objectUrl); // Libera la memoria
-                    let w = img.width, h = img.height;
-                    
-                    if (w > h && w > 800) { h = Math.round(h * (800 / w)); w = 800; }
-                    else if (h > w && h > 800) { w = Math.round(w * (800 / h)); h = 800; }
-                    
-                    const canvas = document.createElement('canvas');
-                    canvas.width = w; canvas.height = h;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, w, h);
-                    
-                    socket.emit('sendChat', { text: canvas.toDataURL('image/jpeg', 0.6), type: 'photo' });
-                    
-                    canvas.width = 0; canvas.height = 0;
-                };
-                img.onerror = function() {
-                    URL.revokeObjectURL(objectUrl);
-                    alert("Ops! Formato foto non supportato.");
-                };
-                img.src = objectUrl;
+                // Calcolo delle proporzioni (sicuro e testato)
+                if (width > height) {
+                    if (width > MAX_SIZE) {
+                        height = Math.round(height * (MAX_SIZE / width));
+                        width = MAX_SIZE;
+                    }
+                } else {
+                    if (height > MAX_SIZE) {
+                        width = Math.round(width * (MAX_SIZE / height));
+                        height = MAX_SIZE;
+                    }
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                // Comprime la foto
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+                
+                // Invia la foto
+                socket.emit('sendChat', { text: dataUrl, type: 'photo' });
+                
+                // Resetta l'input per poter scattare un'altra foto
                 event.target.value = '';
-            }
+            };
+
+            img.onerror = function() {
+                URL.revokeObjectURL(objectUrl);
+                alert("Ops! C'è stato un problema a leggere la foto. Prova a scattare di nuovo.");
+            };
+
+            img.src = objectUrl;
         }
 
 
