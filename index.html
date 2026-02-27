@@ -298,23 +298,21 @@
         document.getElementById('chat-input').addEventListener("keypress", (e) => { if (e.key === "Enter") sendChat(); });
 
         function sendPhoto(event) {
-            const input = event.target;
-            const file = input.files[0];
-            
+            var file = event.target.files[0];
             if (!file) return;
 
-            // Creiamo il link al file
-            const objectUrl = URL.createObjectURL(file);
-            const img = new Image();
+            var reader = new FileReader();
+            
+            reader.onload = function(e) {
+                var img = new Image();
+                
+                img.onload = function() {
+                    var canvas = document.createElement('canvas');
+                    var MAX_SIZE = 600;
+                    var width = img.width;
+                    var height = img.height;
 
-            img.onload = function() {
-                try {
-                    const canvas = document.createElement('canvas');
-                    let width = img.width;
-                    let height = img.height;
-                    const MAX_SIZE = 600; // Limite super-sicuro per non far crashare i telefoni
-
-                    // Calcolo proporzioni corretto
+                    // Calcolo proporzioni semplice e matematicamente sicuro
                     if (width > height) {
                         if (width > MAX_SIZE) {
                             height = Math.round(height * (MAX_SIZE / width));
@@ -329,31 +327,24 @@
 
                     canvas.width = width;
                     canvas.height = height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, width, height);
-
-                    // Compressione aggressiva ma di buona qualità visiva
-                    const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
+                    var ctx = canvas.getContext('2d');
                     
-                    // Invio al server
+                    // Disegna e comprime
+                    ctx.drawImage(img, 0, 0, width, height);
+                    var dataUrl = canvas.toDataURL('image/jpeg', 0.5); // Qualità al 50%
+                    
+                    // Invia!
                     socket.emit('sendChat', { text: dataUrl, type: 'photo' });
 
-                    // Pulizia finale sicura
-                    URL.revokeObjectURL(objectUrl);
-                    input.value = ''; // Resetta il bottone SOLO alla fine
-
-                } catch (error) {
-                    alert("Il telefono ha bloccato l'immagine perché troppo pesante.");
-                    input.value = '';
-                }
+                    // Resetta l'input alla fine
+                    document.getElementById('camera-input').value = '';
+                };
+                
+                img.src = e.target.result;
             };
-
-            img.onerror = function() {
-                alert("Impossibile leggere il file.");
-                input.value = '';
-            };
-
-            img.src = objectUrl;
+            
+            // Questo comando legge il file senza trucchetti
+            reader.readAsDataURL(file);
         }
 
 
