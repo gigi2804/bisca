@@ -298,53 +298,62 @@
         document.getElementById('chat-input').addEventListener("keypress", (e) => { if (e.key === "Enter") sendChat(); });
 
         function sendPhoto(event) {
-            const file = event.target.files[0];
+            const input = event.target;
+            const file = input.files[0];
+            
             if (!file) return;
 
-            const MAX_WIDTH = 600;
-            const MAX_HEIGHT = 600;
+            // Creiamo il link al file
+            const objectUrl = URL.createObjectURL(file);
+            const img = new Image();
 
-            // Utilizziamo l'API moderna e salva-RAM se il browser la supporta
-            if (window.createImageBitmap) {
-                window.createImageBitmap(file).then(bitmap => {
-                    let width = bitmap.width;
-                    let height = bitmap.height;
+            img.onload = function() {
+                try {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+                    const MAX_SIZE = 600; // Limite super-sicuro per non far crashare i telefoni
 
+                    // Calcolo proporzioni corretto
                     if (width > height) {
-                        if (width > MAX_WIDTH) { 
-                            height = Math.round(height * (MAX_WIDTH / width)); 
-                            width = MAX_WIDTH; 
+                        if (width > MAX_SIZE) {
+                            height = Math.round(height * (MAX_SIZE / width));
+                            width = MAX_SIZE;
                         }
                     } else {
-                        if (height > MAX_HEIGHT) { 
-                            width = Math.round(width * (MAX_HEIGHT / height)); 
-                            height = MAX_HEIGHT; 
+                        if (height > MAX_SIZE) {
+                            width = Math.round(width * (MAX_SIZE / height));
+                            height = MAX_SIZE;
                         }
                     }
 
-                    const canvas = document.createElement('canvas');
                     canvas.width = width;
                     canvas.height = height;
                     const ctx = canvas.getContext('2d');
-                    
-                    ctx.drawImage(bitmap, 0, 0, width, height);
-                    const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
-                    
-                    socket.emit('sendChat', { text: compressedDataUrl, type: 'photo' });
+                    ctx.drawImage(img, 0, 0, width, height);
 
-                    // Distruggiamo tutto per pulire immediatamente la memoria!
-                    bitmap.close();
-                    canvas.width = 0;
-                    canvas.height = 0;
-                    event.target.value = '';
+                    // Compressione aggressiva ma di buona qualità visiva
+                    const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
+                    
+                    // Invio al server
+                    socket.emit('sendChat', { text: dataUrl, type: 'photo' });
 
-                }).catch(err => {
-                    alert("Errore nell'elaborazione del selfie. Riprova.");
-                    console.error(err);
-                });
-            } else {
-                alert("Il tuo browser non supporta la compressione avanzata delle foto.");
-            }
+                    // Pulizia finale sicura
+                    URL.revokeObjectURL(objectUrl);
+                    input.value = ''; // Resetta il bottone SOLO alla fine
+
+                } catch (error) {
+                    alert("Il telefono ha bloccato l'immagine perché troppo pesante.");
+                    input.value = '';
+                }
+            };
+
+            img.onerror = function() {
+                alert("Impossibile leggere il file.");
+                input.value = '';
+            };
+
+            img.src = objectUrl;
         }
 
 
