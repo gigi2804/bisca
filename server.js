@@ -119,23 +119,36 @@ io.on('connection', (socket) => {
   }
 
   function handleTimeoutDeath(roomName, playerName) {
-      if (!rooms[roomName]) return;
-      const room = rooms[roomName];
-      const p = room.players.find(x => x.name === playerName);
-      if (p) {
-          if (room.disconnectTimers[playerName]) delete room.disconnectTimers[playerName];
-          if (p.pendingRemoval) return;
-          io.to(roomName).emit('statusMsg', `<span style="color:red">⌛ ${p.name} rimosso dal gioco.</span>`);
-          p.lives = 0; p.isSpectator = true; p.pendingRemoval = true; 
-          if (room.gameState === "PLAYING" || room.gameState === "BIDDING") {
-              room.isProcessing = true; 
-              setTimeout(() => endRoundLogic(roomName, true), 1000);
-          } else { 
-              room.players = room.players.filter(pl => !pl.pendingRemoval);
-              broadcastUpdate(roomName); 
-          }
-      }
-  }
+    if (!rooms[roomName]) return;
+    const room = rooms[roomName];
+    const p = room.players.find(x => x.name === playerName);
+    
+    if (p) {
+        if (room.disconnectTimers[playerName]) delete room.disconnectTimers[playerName];
+        if (p.pendingRemoval) return;
+        
+        // CHECK: Salviamo lo stato prima di modificarlo. 
+        // Era effettivamente un giocatore attivo (vivo e non spettatore)?
+        const wasActivePlayer = (p.lives > 0 && !p.isSpectator);
+
+        io.to(roomName).emit('statusMsg', `<span style="color:red">⌛ ${p.name} rimosso dal gioco.</span>`);
+        
+        // Aggiorniamo le sue statistiche per rimuoverlo
+        p.lives = 0; 
+        p.isSpectator = true; 
+        p.pendingRemoval = true; 
+        
+        // Interrompiamo il gioco SOLO se il giocatore era ancora in partita
+        if (wasActivePlayer && (room.gameState === "PLAYING" || room.gameState === "BIDDING")) {
+            room.isProcessing = true; 
+            setTimeout(() => endRoundLogic(roomName, true), 1000);
+        } else { 
+            // Se era già morto/spettatore, lo rimuoviamo in silenzio senza interrompere il turno
+            room.players = room.players.filter(pl => !pl.pendingRemoval);
+            broadcastUpdate(roomName); 
+        }
+    }
+}
 
   socket.on('voteRestart', () => {
       const roomName = socket.roomName; if (!roomName || !rooms[roomName]) return;
