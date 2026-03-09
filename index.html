@@ -93,12 +93,13 @@
     <div id="pause-overlay">PAUSA<br><button style="width:auto; margin-top:20px; font-size:14px;" onclick="togglePause()">RIPRENDI</button></div>
     <audio id="bg-music" loop><source src="/music.mp3" type="audio/mpeg"></audio>
 
-    <div id="asso-modal">
+    <div id="asso-modal" onclick="if(event.target === this) cancelAsso()">
         <div id="asso-box">
             <h3 style="color:#d4af37; margin-top:0;">ASSO DI DENARI</h3>
             <p style="color:#ccc; font-size:14px;">Come lo vuoi giocare?</p>
-            <button class="asso-btn btn-high" onclick="confirmAsso('HIGH')">ALTO (11)</button>
-            <button class="asso-btn btn-low" onclick="confirmAsso('LOW')">BASSO (1)</button>
+            <button class="asso-btn btn-high" onclick="confirmAsso('HIGH')">ALTO</button>
+            <button class="asso-btn btn-low" onclick="confirmAsso('LOW')">BASSO</button>
+            <button class="asso-btn" style="background: #661111; color: white; border: 1px solid #ff4444;" onclick="cancelAsso()">ANNULLA</button>
         </div>
     </div>
 
@@ -428,6 +429,12 @@
             document.getElementById('asso-modal').style.display = 'none';
         }
 
+        // Nuova funzione per annullare
+        function cancelAsso() {
+            pendingCardIndex = null;
+            document.getElementById('asso-modal').style.display = 'none';
+        }
+
         socket.on('backToLobby', () => {
             if (amISpectator) { const choice = confirm("La partita è stata riavviata. Vuoi unirti alla prossima come giocatore?"); if (choice) { socket.emit('switchRole', true); } else { socket.emit('switchRole', false); } } else { alert("Partita finita/resettata! Ritorno alla Lobby."); }
             document.getElementById('game-area').style.display = 'none'; document.getElementById('lobby').style.display = 'block';
@@ -489,7 +496,40 @@
         socket.on('trickResult', m => { const el = document.getElementById('status-msg'); el.innerHTML=m; el.style.color='gold'; el.style.borderColor='gold'; setTimeout(()=> { el.style.color='#eee'; el.style.borderColor='#d4af37'; }, 2000); });
         socket.on('gameOver', m => { alert(m); });
 
-        function updateTable(cards) { document.querySelectorAll('.played-card-slot').forEach(e=>e.innerHTML=''); cards.forEach(x => { const slot = document.getElementById('slot-'+x.playerId); if(slot) { const el = renderCard(x.card, false); if(x.isAssoHigh) el.innerHTML+=`<div class="asso-badge">${x.isAssoHigh?'A':'v'}</div>`; slot.appendChild(el); } }); }
+        // Nuova funzione per calcolare il valore delle carte lato client
+        function getCardPower(c, isAssoHigh) {
+            if (c.suit === 'denari' && c.value === 1) return isAssoHigh ? 9999 : -1;
+            let p = c.suit === 'denari' ? 400 : c.suit === 'coppe' ? 300 : c.suit === 'spade' ? 200 : 100;
+            return p + c.value;
+        }
+
+        function updateTable(cards) { 
+            document.querySelectorAll('.played-card-slot').forEach(e=>e.innerHTML=''); 
+            
+            // Troviamo la carta vincente attuale
+            let winningIdx = -1;
+            let maxP = -9999;
+            cards.forEach((x, i) => {
+                let p = getCardPower(x.card, x.isAssoHigh);
+                if (p > maxP) { maxP = p; winningIdx = i; }
+            });
+            
+            cards.forEach((x, i) => { 
+                const slot = document.getElementById('slot-'+x.playerId);
+                if(slot) { 
+                    const el = renderCard(x.card, false);  
+                    
+                    // Se è la carta vincente, aggiungiamo il bordo verde
+                    if (i === winningIdx) {
+                        el.style.border = "3px solid #00ff00";
+                        el.style.boxShadow = "0 0 15px #00ff00";
+                        el.style.boxSizing = "border-box";
+                    }
+
+                    slot.appendChild(el); 
+                } 
+            }); 
+        }
 
         function updateTurn(isMine, phase, count) {
             isMyTurn = isMine; document.getElementById('my-hand').style.opacity = isMine ? 1 : 0.6; const c = document.getElementById('controls');

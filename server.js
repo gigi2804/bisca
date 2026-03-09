@@ -69,7 +69,13 @@ io.on('connection', (socket) => {
   socket.on('disconnect', (reason) => { 
       handleLeave(socket, true); 
   });
-  socket.on('leaveRoom', () => { handleLeave(socket, false); });
+  socket.on('leaveRoom', () => { 
+      // Prima di fare qualsiasi cosa, scolleghiamo il socket dal canale di questa stanza!
+      if (socket.roomName) {
+          socket.leave(socket.roomName);
+      }
+      handleLeave(socket, false); 
+  });
 
   function handleLeave(sock, isDisconnectError) {
       try {
@@ -363,6 +369,17 @@ function broadcastUpdate(roomName) {
             isHost: (room.players.length > 0 && room.players[0].id === p.id) 
         });
     });
+    // NUOVO: Forziamo l'aggiornamento visivo del tavolo e del turno per evitare desincronizzazioni!
+    if (room.gameState !== "LOBBY") {
+        io.to(roomName).emit('tableUpdate', room.tableCards);
+        if (room.players[room.currentPlayerIndex]) {
+            io.to(roomName).emit('turnUpdate', { 
+                playerId: room.players[room.currentPlayerIndex].id, 
+                phase: room.gameState, 
+                roundCards: room.roundCardsCount 
+            });
+        }
+    }
 }
 function startRound(roomName) {
   const room = rooms[roomName];
