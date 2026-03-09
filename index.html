@@ -272,6 +272,7 @@
             document.getElementById('my-hand').innerHTML = '';
             document.getElementById('seats-container').innerHTML = '';
             document.getElementById('asso-modal').style.display = 'none';
+            document.getElementById('chat-messages').innerHTML = '';
         }
 
         function changeRoom() { socket.emit('leaveRoom'); resetToLogin(); }
