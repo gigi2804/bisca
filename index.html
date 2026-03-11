@@ -216,10 +216,10 @@
                             '181.jpg', '182.jpg', '183.jpg', '184.jpg', '185.jpg', '186.jpg', '187.jpg', '188.jpg', '189.jpg', '190.jpg',
                             '191.jpg', '192.jpg', '193.jpg', '194.jpg', '195.jpg', '196.jpg', '197.jpg', '198.jpg', '199.jpg', '200.jpg',
                             '201.jpg', '202.jpg', '203.jpg', '204.jpg', '205.jpg', '206.jpg', '207.jpg', '208.jpg', '209.jpg', '210.jpg',
-                            '211.jpg', '212.jpg',
+                            '211.jpg', '212.jpg', '213.jpg', '214.jpg',
                             '1.webp', '2.webp', '3.webp', '4.webp', '5.webp', '6.webp', '7.webp', '8.webp', '9.webp', '10.webp',
                             '11.webp', '12.webp', '13.webp', '14.webp', '15.webp', '16.webp', '17.webp', '18.webp', '19.webp', '20.webp',
-                            '21.webp', '22.webp', '23.webp', '24.webp', '25.webp', '26.webp', '27.webp', '28.webp', '29.webp'
+                            '21.webp', '22.webp', '23.webp', '24.webp', '25.webp', '26.webp', '27.webp', '28.webp', '29.webp', '30.webp'
          ]; // <-- AGGIORNA QUESTA LISTA CON I TUOI FILE!
         
         function toggleStickers() {
@@ -519,12 +519,12 @@
                 const slot = document.getElementById('slot-'+x.playerId);
                 if(slot) { 
                     const el = renderCard(x.card, false);  
-                    
-                    // Se è la carta vincente, aggiungiamo il bordo verde
+                    if(x.isAssoHigh) el.innerHTML+=`<div class="asso-badge">${x.isAssoHigh?'A':'v'}</div>`;
+
+                    // Se è la carta vincente, aggiungiamo il bordo 
                     if (i === winningIdx) {
-                        el.style.border = "3px solid #00ff00";
-                        el.style.boxShadow = "0 0 15px #00ff00";
-                        el.style.boxSizing = "border-box";
+                        el.style.border = "none";
+                        el.style.boxShadow = "0 0 0 3px #ffd700, 0 0 15px rgba(255, 215, 0, 0.8)";
                     }
 
                     slot.appendChild(el); 
