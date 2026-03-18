@@ -201,16 +201,39 @@ io.on('connection', (socket) => {
           if (!rooms[sanitizedRoom]) rooms[sanitizedRoom] = createRoomState();
           const room = rooms[sanitizedRoom];
           const ex = room.players.find(p => p.name === name);
+          
           if (ex) {
+              // --- FIX 2: CONTROLLO NOMI DOPPI ---
+              // Verifichiamo se c'è un collegamento di rete ancora attivo con questo ID
+              const isSocketConnected = io.sockets.sockets.has(ex.id);
+              if (isSocketConnected) {
+                  return socket.emit('errorMsg', 'Questo nome è già in uso da un giocatore attivo! Scegline un altro.');
+              }
+              // -----------------------------------
+
+              // --- FIX 1: SALVATAGGIO VECCHIO ID ---
+              const oldId = ex.id; 
+              // -------------------------------------
+
               if (room.disconnectTimers[name]) { 
                 clearTimeout(room.disconnectTimers[name]); 
                 delete room.disconnectTimers[name]; 
-                io.to(sanitizedRoom).emit('chatMessage', { name: "SISTEMA", text: `✅ <b>${name}</b> è tornato!`, id: "SYS" }); }
+                io.to(sanitizedRoom).emit('chatMessage', { name: "SISTEMA", text: `✅ <b>${name}</b> è tornato!`, id: "SYS" }); 
+              }
               if(room.restartVotes.has(ex.id)) { 
                 room.restartVotes.delete(ex.id); 
-                room.restartVotes.add(socket.id); }
+                room.restartVotes.add(socket.id); 
+              }
               ex.id = socket.id; 
               ex.pendingRemoval = false;
+              
+              // --- FIX 1: AGGIORNIAMO L'ID SULLA CARTA SUL TAVOLO ---
+              room.tableCards.forEach(tc => {
+                  if (tc.playerId === oldId) {
+                      tc.playerId = socket.id;
+                  }
+              });
+              // ------------------------------------------------------
               
               const isBlind = (room.roundCardsCount === 1 && room.gameSettings.blindMode && room.gameState !== 'LOBBY');
               
@@ -384,7 +407,30 @@ function broadcastUpdate(roomName) {
 function startRound(roomName) {
   const room = rooms[roomName];
   room.deck = shuffle(createDeck()); room.tableCards = []; room.isProcessing = false;
-  room.players.forEach(p => { p.bid = null; p.tricksWon = 0; if (p.lives > 0) p.hand = room.deck.splice(0, room.roundCardsCount); else p.hand = []; });
+  room.players.forEach(p => { 
+      p.bid = null; 
+      p.tricksWon = 0; 
+      if (p.lives > 0) {
+          p.hand = room.deck.splice(0, room.roundCardsCount);
+          
+          // --- NUOVO: ORDINAMENTO CARTE IN MANO ---
+          p.hand.sort((a, b) => {
+              // Assegniamo un peso ai semi per raggrupparli (dal più debole al più forte)
+              const suitOrder = { 'bastoni': 1, 'spade': 2, 'coppe': 3, 'denari': 4 };
+              
+              // Se i semi sono diversi, ordina per seme
+              if (suitOrder[a.suit] !== suitOrder[b.suit]) {
+                  return suitOrder[a.suit] - suitOrder[b.suit];
+              }
+              // Se i semi sono uguali, ordina per numero (dal più basso al più alto)
+              return a.value - b.value;
+          });
+          // ----------------------------------------
+          
+      } else {
+          p.hand = []; 
+      }
+  });
   if (room.roundCardsCount === 1 && room.gameSettings.blindMode) { io.to(roomName).emit('blindRoundStart', room.players.map(p => ({ id: p.id, card: (p.lives > 0) ? p.hand[0] : null }))); room.players.forEach(p => { if (p.lives > 0) io.to(p.id).emit('updateHand', p.hand); }); } 
   else { io.to(roomName).emit('clearBlindCards'); room.players.forEach(p => { if (p.lives > 0) io.to(p.id).emit('updateHand', p.hand); else io.to(p.id).emit('updateHand', []); }); }
   room.firstPlayerIndex = getNextAliveIndex(room.dealerIndex, room.players); room.currentPlayerIndex = room.firstPlayerIndex; broadcastUpdate(roomName); updateGameState(roomName);
