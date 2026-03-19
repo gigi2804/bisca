@@ -294,7 +294,25 @@
         }
 
         function changeRoom() { socket.emit('leaveRoom'); resetToLogin(); }
-        function leaveGame() { if(confirm("Sei sicuro di voler abbandonare?")) { if (confirm("Vuoi rimanere nel tavolo come SPETTATORE?")) { socket.emit('leaveGame', { staySpectator: true }); } else { socket.emit('leaveGame', { staySpectator: false }); resetToLogin(); } } }
+        function leaveGame() {
+            if (amISpectator) {
+                // Se è già uno spettatore, facciamo una sola domanda semplice
+                if (confirm("Sei sicuro di voler uscire dal tavolo?")) {
+                    socket.emit('leaveRoom'); // Lo scollega definitivamente dal server
+                    resetToLogin();
+                }
+            } else {
+                // Se è un giocatore attivo, manteniamo la doppia scelta per salvaguardare il turno
+                if (confirm("Sei sicuro di voler abbandonare la partita in corso?")) {
+                    if (confirm("Vuoi rimanere nel tavolo come SPETTATORE?")) {
+                        socket.emit('leaveGame', { staySpectator: true });
+                    } else {
+                        socket.emit('leaveGame', { staySpectator: false });
+                        resetToLogin();
+                    }
+                }
+            }
+        }
         function voteRestart() { socket.emit('voteRestart'); }
         function joinGameFromLobby() { socket.emit('switchRole', true); }
 
