@@ -492,25 +492,32 @@ function endRoundLogic(roomName, safeMode = false) {
     let currentlyAlive = room.players.filter(p => p.lives > 0);
     let newlyDead = room.players.filter(p => p.lives <= 0 && aliveAtStartIds.has(p.id));
 
-    if (currentlyAlive.length === 0 && !safeMode) {
-        const turnParticipants = room.players.filter(p => aliveAtStartIds.has(p.id));
-        if (turnParticipants.length > 0) {
-            const maxLives = Math.max(...turnParticipants.map(p => p.lives));
-            const survivors = turnParticipants.filter(p => p.lives === maxLives);
-            survivors.forEach(p => p.lives = 1); 
-            reportMsg += `<br>⚖️ <b>TUTTI A 0 O MENO!</b><br>Si salvano i migliori del turno: ${survivors.map(p=>p.name).join(', ')}`;
-            currentlyAlive = survivors;
-        }
-    } else {
-        if (currentlyAlive.length > 0 && newlyDead.length > 0 && !room.bonusLifeUsed && !safeMode) { 
+    if (!safeMode) {
+        // 1. PRIORITÀ AL BONUS: Se c'è qualcuno morto e il bonus non è stato usato, usalo!
+        if (newlyDead.length > 0 && !room.bonusLifeUsed) { 
             newlyDead.forEach(p => p.lives += 1); 
             room.bonusLifeUsed = true; 
             room.bonusUsedBy = newlyDead.map(p => p.name).join(", "); 
             reportMsg += `<br>✨ <b>BONUS ATTIVATO!</b><br>Salvati: ${room.bonusUsedBy}`; 
             io.to(roomName).emit('updateBonus', { used: true, by: room.bonusUsedBy }); 
-            currentlyAlive = room.players.filter(p => p.lives > 0); 
+            
+            // Aggiorniamo le liste dopo l'intervento del bonus
+            currentlyAlive = room.players.filter(p => p.lives > 0);
+            newlyDead = room.players.filter(p => p.lives <= 0 && aliveAtStartIds.has(p.id));
         }
-        else if (currentlyAlive.length > 0 && newlyDead.length > 0) { 
+
+        // 2. REGOLA ANTI-PAREGGIO: Ora controlliamo se, nonostante il bonus (o se era già esaurito), sono tutti morti
+        if (currentlyAlive.length === 0) {
+            const turnParticipants = room.players.filter(p => aliveAtStartIds.has(p.id));
+            if (turnParticipants.length > 0) {
+                const maxLives = Math.max(...turnParticipants.map(p => p.lives));
+                const survivors = turnParticipants.filter(p => p.lives === maxLives);
+                survivors.forEach(p => p.lives = 1); 
+                reportMsg += `<br>⚖️ <b>TUTTI A 0 O MENO!</b><br>Si salvano i migliori del turno: ${survivors.map(p=>p.name).join(', ')}`;
+                currentlyAlive = survivors;
+            }
+        } else if (newlyDead.length > 0) {
+            // Se c'è ancora qualcuno vivo, i morti rimasti sono eliminati definitivamente
             reportMsg += `<br>💀 <b>ELIMINATI:</b> ${newlyDead.map(p=>p.name).join(', ')}`; 
         }
     }
