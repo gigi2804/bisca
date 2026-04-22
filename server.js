@@ -453,6 +453,7 @@ function evaluateTrick(roomName) {
         try {
             if(!rooms[roomName]) return;
             const r = rooms[roomName]; 
+            if(r.gameState === "LOBBY") return;
             if(wPlayer) wPlayer.tricksWon++;
             broadcastUpdate(roomName);
             r.tableCards = []; io.to(roomName).emit('tableUpdate', []); io.to(roomName).emit('clearBlindCards'); 
@@ -533,7 +534,11 @@ function endRoundLogic(roomName, safeMode = false) {
     room.dealerIndex = getNextAliveIndex(room.dealerIndex, room.players);
     if (skipDealer) { room.dealerIndex = getNextAliveIndex(room.dealerIndex, room.players); setTimeout(() => io.to(roomName).emit('statusMsg', "🔀 Il Mazziere salta uno!"), 2000); }
     broadcastUpdate(roomName);
-    setTimeout(() => { if(rooms[roomName]) { io.to(roomName).emit('statusMsg', `Nuovo Round: ${room.roundCardsCount} carte`); room.isProcessing = false; startRound(roomName); } }, 6000);
+    setTimeout(() => { if(rooms[roomName] && rooms[roomName].gameState !== "LOBBY") { io.to(roomName).emit('statusMsg', `Nuovo Round: ${room.roundCardsCount} carte`); room.isProcessing = false; startRound(roomName); } else if(rooms[roomName]) {
+            // Se siamo in lobby, assicuriamoci solo che il flag di elaborazione sia spento
+            rooms[roomName].isProcessing = false;
+        }
+    }, 6000);
 }
 
 function resetGame(roomName) { 
