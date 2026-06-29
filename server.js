@@ -28,7 +28,7 @@ const SUITS = ['denari', 'coppe', 'spade', 'bastoni'];
 function createRoomState() {
     return {
         players: [], deck: [], tableCards: [],
-        gameState: "LOBBY", previousState: "",
+        gameState: "LOBBY",
         roundCardsCount: 5,
         currentPlayerIndex: 0, dealerIndex: 0, firstPlayerIndex: 0,
         isProcessing: false,
@@ -306,8 +306,6 @@ io.on('connection', (socket) => {
           io.to(roomName).emit('updateBonus', { used: false, by: null }); startRound(roomName);
       } catch(e) { console.error(e); }
   });
-
-  socket.on('togglePause', () => { const r=rooms[socket.roomName]; if(!r)return; if(r.gameState==="PAUSED"){r.gameState=r.previousState; io.to(socket.roomName).emit('gamePaused',false); updateGameState(socket.roomName);} else {r.previousState=r.gameState; r.gameState="PAUSED"; io.to(socket.roomName).emit('gamePaused',true);} });
   
   socket.on('sendChat', (data) => {
             if (!data || typeof data.text !== 'string') return;
@@ -343,7 +341,7 @@ io.on('connection', (socket) => {
             });
         });
   
-  socket.on('placeBid', (bid) => { try { const roomName = socket.roomName; if (!roomName || !rooms[roomName]) return; const room = rooms[roomName]; if(room.gameState==="PAUSED" || !room.players[room.currentPlayerIndex] || room.players[room.currentPlayerIndex].id !== socket.id) return; if(room.currentPlayerIndex === room.dealerIndex && room.players.filter(p=>p.lives>0).reduce((s,p)=>s+(p.bid||0),0)+bid===room.roundCardsCount) return socket.emit('warning', "⚠️ Il mazziere non può chiamare questo numero!"); room.players.find(p=>p.id===socket.id).bid = bid; broadcastUpdate(roomName); nextTurn(roomName, 'BIDDING'); } catch(e) { console.error(e); } });
+  socket.on('placeBid', (bid) => { try { const roomName = socket.roomName; if (!roomName || !rooms[roomName]) return; const room = rooms[roomName]; if(!room.players[room.currentPlayerIndex] || room.players[room.currentPlayerIndex].id !== socket.id) return; if(room.currentPlayerIndex === room.dealerIndex && room.players.filter(p=>p.lives>0).reduce((s,p)=>s+(p.bid||0),0)+bid===room.roundCardsCount) return socket.emit('warning', "⚠️ Il mazziere non può chiamare questo numero!"); room.players.find(p=>p.id===socket.id).bid = bid; broadcastUpdate(roomName); nextTurn(roomName, 'BIDDING'); } catch(e) { console.error(e); } });
   
   socket.on('playCard', (data) => { 
       try { 
@@ -355,7 +353,7 @@ io.on('connection', (socket) => {
           if (room.gameState !== "PLAYING") return;
           // -----------------------------
 
-          if(room.gameState==="PAUSED" || room.isProcessing || !room.players[room.currentPlayerIndex] || room.players[room.currentPlayerIndex].id !== socket.id) return; 
+          if(room.isProcessing || !room.players[room.currentPlayerIndex] || room.players[room.currentPlayerIndex].id !== socket.id) return; 
           
           const p = room.players.find(x=>x.id===socket.id), c = p.hand[data.cardIndex];
           p.hand.splice(data.cardIndex, 1); 
@@ -549,6 +547,6 @@ function resetGame(roomName) {
     io.to(roomName).emit('backToLobby'); broadcastUpdate(roomName); 
 }
 
-function updateGameState(roomName, force) { const r = rooms[roomName]; if(!r) return; if (r.gameState === "PAUSED") return; if(force) r.gameState=force; else if (!r.players[r.firstPlayerIndex] || r.players[r.firstPlayerIndex].bid === null) r.gameState = "BIDDING"; else r.gameState = "PLAYING"; let msg = r.gameState === "BIDDING" ? `Scommetti: ${r.players[r.currentPlayerIndex].name}` : `Gioca: ${r.players[r.currentPlayerIndex].name}`; io.to(roomName).emit('statusMsg', msg); io.to(roomName).emit('turnUpdate', { playerId: r.players[r.currentPlayerIndex].id, phase: r.gameState, roundCards: r.roundCardsCount }); }
+function updateGameState(roomName, force) { const r = rooms[roomName]; if(!r) return; if(force) r.gameState=force; else if (!r.players[r.firstPlayerIndex] || r.players[r.firstPlayerIndex].bid === null) r.gameState = "BIDDING"; else r.gameState = "PLAYING"; let msg = r.gameState === "BIDDING" ? `Scommetti: ${r.players[r.currentPlayerIndex].name}` : `Gioca: ${r.players[r.currentPlayerIndex].name}`; io.to(roomName).emit('statusMsg', msg); io.to(roomName).emit('turnUpdate', { playerId: r.players[r.currentPlayerIndex].id, phase: r.gameState, roundCards: r.roundCardsCount }); }
 
 server.listen(PORT, () => console.log(`SERVER PORT ${PORT}`));
