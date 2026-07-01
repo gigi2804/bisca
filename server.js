@@ -407,46 +407,166 @@ function handleBotTurn(roomName) {
     if (!room || room.isProcessing || room.gameState === "LOBBY") return;
 
     const p = room.players[room.currentPlayerIndex];
-    if (!p || !p.isBot) return; // Se non è un bot, non fare nulla
+    if (!p || !p.isBot) return; // Se non è un bot, ignora
 
-    room.isProcessing = true; // Blocca input simultanei
+    room.isProcessing = true; // Blocca input simultanei durante il "ragionamento"
 
-    // Simula 1.5 secondi di "pensiero" del bot prima di agire
+    // Simula 1.5 secondi di delay per rendere la partita fluida e naturale
     setTimeout(() => {
         if (!rooms[roomName] || room.gameState === "LOBBY") return;
         room.isProcessing = false;
 
+        // ==========================================
+        // 1. STRATEGIA DI SCOMMESSA (BIDDING)
+        // ==========================================
         if (room.gameState === "BIDDING") {
             let maxBid = room.roundCardsCount;
-            let randomBid = Math.floor(Math.random() * (maxBid + 1));
+            let estimatedTricks = 0;
             
-            // Regola del mazziere: la somma delle scommesse non può essere uguale alle carte in mano
+            // Valutazione del valore della mano
+            p.hand.forEach(c => {
+                if (c.suit === 'denari') {
+                    if (c.value === 1 || c.value >= 7) estimatedTricks += 1.0;
+                    else if (c.value >= 4) estimatedTricks += 0.5;
+                } else if (c.suit === 'coppe') {
+                    if (c.value >= 9) estimatedTricks += 0.9;
+                    else if (c.value >= 7) estimatedTricks += 0.4;
+                } else { // spade e bastoni
+                    if (c.value === 10) estimatedTricks += 0.8;
+                    else if (c.value >= 8) estimatedTricks += 0.3;
+                }
+            });
+            
+            let targetBid = Math.round(estimatedTricks);
+            if (targetBid > maxBid) targetBid = maxBid;
+
+            // REGOLA DEL MAZZIERE: controllo anti-pareggio obbligatorio
             if (room.currentPlayerIndex === room.dealerIndex) {
                 let currentSum = room.players.filter(x => x.lives > 0 && x.bid !== null).reduce((s,x) => s + x.bid, 0);
-                if (currentSum + randomBid === maxBid) {
-                    randomBid = (randomBid === 0) ? 1 : randomBid - 1; 
+                if (currentSum + targetBid === maxBid) {
+                    // Se la scommessa è vietata, devia di 1 verso l'alto o verso il basso
+                    if (targetBid < maxBid) targetBid += 1;
+                    else targetBid -= 1;
                 }
             }
             
-            p.bid = randomBid;
+            p.bid = targetBid;
             broadcastUpdate(roomName);
             nextTurn(roomName, 'BIDDING');
 
+        // ==========================================
+        // 2. STRATEGIA DI GIOCO (PLAYING)
+        // ==========================================
         } else if (room.gameState === "PLAYING") {
             if (p.hand.length === 0) return;
             
-            // Per ora il bot sceglie una carta totalmente a caso
-            const cardIndex = Math.floor(Math.random() * p.hand.length);
-            const c = p.hand[cardIndex];
-            p.hand.splice(cardIndex, 1); // Rimuovi la carta dalla mano
-            
-            let isHigh = false;
-            if (c.suit === 'denari' && c.value === 1) {
-                // Sceglie Asso Alto solo se deve ancora fare le prese scommesse
-                isHigh = (p.bid > p.tricksWon); 
+            // Il bot vuole vincere solo se non ha ancora raggiunto il suo target
+            let wantsToWin = (p.tricksWon < p.bid);
+
+            // Calcola il potere massimo attualmente presente sul tavolo
+            let maxCurrentPower = -9999;
+            room.tableCards.forEach(tc => {
+                let power = getCardPower(tc.card, tc.isAssoHigh);
+                if (power > maxCurrentPower) maxCurrentPower = power;
+            });
+
+            let isFirstPlayer = (room.tableCards.length === 0);
+            let chosenCardIndex = 0;
+            let choiceIsAssoHigh = false;
+
+            // Mappiamo la mano del bot calcolando i pesi per l'Asso di Denari sia High che Low
+            let handPowers = p.hand.map((c, idx) => {
+                if (c.suit === 'denari' && c.value === 1) {
+                    return { 
+                        index: idx, 
+                        card: c, 
+                        powerHigh: getCardPower(c, true), 
+                        powerLow: getCardPower(c, false) 
+                    };
+                } else {
+                    let pwr = getCardPower(c, false);
+                    return { index: idx, card: c, powerHigh: pwr, powerLow: pwr };
+                }
+            });
+
+            if (isFirstPlayer) {
+                if (wantsToWin) {
+                    // Apre il turno: gioca la sua carta più forte in assoluto per assicurarsi la presa
+                    handPowers.sort((a, b) => b.powerHigh - a.powerHigh);
+                    chosenCardIndex = handPowers[0].index;
+                    if (handPowers[0].card.suit === 'denari' && handPowers[0].card.value === 1) {
+                        choiceIsAssoHigh = true;
+                    }
+                } else {
+                    // Ha già fatto le sue prese: gioca la carta più bassa per rischiare il meno possibile
+                    handPowers.sort((a, b) => a.powerLow - b.powerLow);
+                    chosenCardIndex = handPowers[0].index;
+                    if (handPowers[0].card.suit === 'denari' && handPowers[0].card.value === 1) {
+                        choiceIsAssoHigh = false;
+                    }
+                }
+            } else {
+                // Il bot gioca dopo che qualcun altro ha già calato una carta
+                if (wantsToWin) {
+                    // Filtra le carte che possono battere il tavolo
+                    let winningChoices = handPowers.filter(hp => {
+                        let effectivePower = (hp.card.suit === 'denari' && hp.card.value === 1) ? hp.powerHigh : hp.powerLow;
+                        return effectivePower > maxCurrentPower;
+                    });
+
+                    if (winningChoices.length > 0) {
+                        // Ha carte vincenti: gioca la PIÙ DEBOLE tra quelle utili per non sprecare i carichi più grossi
+                        winningChoices.sort((a, b) => {
+                            let pA = (a.card.suit === 'denari' && a.card.value === 1) ? a.powerHigh : a.powerLow;
+                            let pB = (b.card.suit === 'denari' && b.card.value === 1) ? b.powerHigh : b.powerLow;
+                            return pA - pB;
+                        });
+                        chosenCardIndex = winningChoices[0].index;
+                        if (winningChoices[0].card.suit === 'denari' && winningChoices[0].card.value === 1) {
+                            choiceIsAssoHigh = true;
+                        }
+                    } else {
+                        // Non può vincere la presa corrente: "scarta" la sua carta più debole risparmiando le forti per dopo
+                        handPowers.sort((a, b) => a.powerLow - b.powerLow);
+                        chosenCardIndex = handPowers[0].index;
+                        if (handPowers[0].card.suit === 'denari' && handPowers[0].card.value === 1) {
+                            choiceIsAssoHigh = false;
+                        }
+                    }
+                } else {
+                    // Il bot vuole PERDERE la presa
+                    let losingChoices = handPowers.filter(hp => {
+                        let effectivePower = (hp.card.suit === 'denari' && hp.card.value === 1) ? hp.powerLow : hp.powerLow;
+                        return effectivePower < maxCurrentPower;
+                    });
+
+                    if (losingChoices.length > 0) {
+                        // Trova le carte che perdono e gioca la PIÙ ALTA tra di esse (smaltisce i medi in sicurezza)
+                        losingChoices.sort((a, b) => {
+                            let pA = (a.card.suit === 'denari' && a.card.value === 1) ? a.powerLow : a.powerLow;
+                            let pB = (b.card.suit === 'denari' && b.card.value === 1) ? b.powerLow : b.powerLow;
+                            return pB - pA;
+                        });
+                        chosenCardIndex = losingChoices[0].index;
+                        if (losingChoices[0].card.suit === 'denari' && losingChoices[0].card.value === 1) {
+                            choiceIsAssoHigh = false;
+                        }
+                    } else {
+                        // È costretto a vincere (ha solo carte più alte del tavolo): gioca la più bassa in assoluto
+                        handPowers.sort((a, b) => a.powerLow - b.powerLow);
+                        chosenCardIndex = handPowers[0].index;
+                        if (handPowers[0].card.suit === 'denari' && handPowers[0].card.value === 1) {
+                            choiceIsAssoHigh = (handPowers[0].powerLow < maxCurrentPower);
+                        }
+                    }
+                }
             }
 
-            room.tableCards.push({ playerId: p.id, card: c, isAssoHigh: isHigh, playerName: p.name });
+            // Esecuzione fisica della mossa del bot
+            const c = p.hand[chosenCardIndex];
+            p.hand.splice(chosenCardIndex, 1);
+
+            room.tableCards.push({ playerId: p.id, card: c, isAssoHigh: choiceIsAssoHigh, playerName: p.name });
             io.to(roomName).emit('tableUpdate', room.tableCards);
             nextTurn(roomName, 'PLAYING');
         }
