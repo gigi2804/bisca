@@ -221,6 +221,7 @@
                 <input type="checkbox" id="opt-blind" style="width:20px; margin:0;"> 
                 <span>Modalità Cieca (1 Carta)</span>
             </label>
+            <button onclick="addBot()" style="margin-top:10px; background:#2b3990; color:white; border: 1px solid #4444ff;">AGGIUNGI BOT 🤖</button>
             <button onclick="start()" style="margin-top:15px;">INIZIA PARTITA</button>
         </div>
         <div id="waiting-msg" style="color:#888; font-size:12px; margin-top:10px;">In attesa dell'Host...</div>
@@ -308,6 +309,9 @@
             document.getElementById('sticker-menu').style.display = 'none'; // Chiudi il menu
         }
         // -------------------------
+        function addBot() {
+        socket.emit('addBot');
+        }
 
         socket.on('connect', () => { 
             myId = socket.id; 

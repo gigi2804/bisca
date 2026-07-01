@@ -25,6 +25,8 @@ console.log("SERVER AVVIATO: Fix Clic Accidentale in Scommessa");
 const rooms = {}; 
 const SUITS = ['denari', 'coppe', 'spade', 'bastoni'];
 
+let globalBotCounter = 1;
+
 function createRoomState() {
     return {
         players: [], deck: [], tableCards: [],
@@ -66,6 +68,34 @@ function getNextAliveIndex(curr, players) {
 }
 
 io.on('connection', (socket) => {
+
+    socket.on('addBot', () => {
+    const roomName = socket.roomName; 
+    if (!roomName || !rooms[roomName]) return;
+    const room = rooms[roomName];
+    
+    // Solo l'host può aggiungere i bot
+    if (room.players.length === 0 || room.players[0].id !== socket.id) return;
+    if (room.players.length >= 8) return socket.emit('errorMsg', 'Tavolo Pieno! Massimo 8 giocatori.');
+
+    const botId = "BOT_" + Math.random().toString(36).substr(2, 9);
+    const botName = "Bot_" + globalBotCounter++;
+    
+    // Inseriamo il bot con il flag speciale "isBot"
+    room.players.push({ 
+        id: botId, 
+        name: botName, 
+        lives: 5, 
+        hand: [], 
+        bid: null, 
+        tricksWon: 0, 
+        isSpectator: false,
+        isBot: true 
+    });
+    
+    broadcastUpdate(roomName);
+});
+
   socket.on('disconnect', (reason) => { 
       handleLeave(socket, true); 
   });
@@ -372,6 +402,57 @@ io.on('connection', (socket) => {
   });
 });
 
+function handleBotTurn(roomName) {
+    const room = rooms[roomName];
+    if (!room || room.isProcessing || room.gameState === "LOBBY") return;
+
+    const p = room.players[room.currentPlayerIndex];
+    if (!p || !p.isBot) return; // Se non è un bot, non fare nulla
+
+    room.isProcessing = true; // Blocca input simultanei
+
+    // Simula 1.5 secondi di "pensiero" del bot prima di agire
+    setTimeout(() => {
+        if (!rooms[roomName] || room.gameState === "LOBBY") return;
+        room.isProcessing = false;
+
+        if (room.gameState === "BIDDING") {
+            let maxBid = room.roundCardsCount;
+            let randomBid = Math.floor(Math.random() * (maxBid + 1));
+            
+            // Regola del mazziere: la somma delle scommesse non può essere uguale alle carte in mano
+            if (room.currentPlayerIndex === room.dealerIndex) {
+                let currentSum = room.players.filter(x => x.lives > 0 && x.bid !== null).reduce((s,x) => s + x.bid, 0);
+                if (currentSum + randomBid === maxBid) {
+                    randomBid = (randomBid === 0) ? 1 : randomBid - 1; 
+                }
+            }
+            
+            p.bid = randomBid;
+            broadcastUpdate(roomName);
+            nextTurn(roomName, 'BIDDING');
+
+        } else if (room.gameState === "PLAYING") {
+            if (p.hand.length === 0) return;
+            
+            // Per ora il bot sceglie una carta totalmente a caso
+            const cardIndex = Math.floor(Math.random() * p.hand.length);
+            const c = p.hand[cardIndex];
+            p.hand.splice(cardIndex, 1); // Rimuovi la carta dalla mano
+            
+            let isHigh = false;
+            if (c.suit === 'denari' && c.value === 1) {
+                // Sceglie Asso Alto solo se deve ancora fare le prese scommesse
+                isHigh = (p.bid > p.tricksWon); 
+            }
+
+            room.tableCards.push({ playerId: p.id, card: c, isAssoHigh: isHigh, playerName: p.name });
+            io.to(roomName).emit('tableUpdate', room.tableCards);
+            nextTurn(roomName, 'PLAYING');
+        }
+    }, 1500); 
+}
+
 function broadcastUpdate(roomName) {
     const room = rooms[roomName];
     if(!room) return;
@@ -547,6 +628,6 @@ function resetGame(roomName) {
     io.to(roomName).emit('backToLobby'); broadcastUpdate(roomName); 
 }
 
-function updateGameState(roomName, force) { const r = rooms[roomName]; if(!r) return; if(force) r.gameState=force; else if (!r.players[r.firstPlayerIndex] || r.players[r.firstPlayerIndex].bid === null) r.gameState = "BIDDING"; else r.gameState = "PLAYING"; let msg = r.gameState === "BIDDING" ? `Scommetti: ${r.players[r.currentPlayerIndex].name}` : `Gioca: ${r.players[r.currentPlayerIndex].name}`; io.to(roomName).emit('statusMsg', msg); io.to(roomName).emit('turnUpdate', { playerId: r.players[r.currentPlayerIndex].id, phase: r.gameState, roundCards: r.roundCardsCount }); }
+function updateGameState(roomName, force) { const r = rooms[roomName]; if(!r) return; if(force) r.gameState=force; else if (!r.players[r.firstPlayerIndex] || r.players[r.firstPlayerIndex].bid === null) r.gameState = "BIDDING"; else r.gameState = "PLAYING"; let msg = r.gameState === "BIDDING" ? `Scommetti: ${r.players[r.currentPlayerIndex].name}` : `Gioca: ${r.players[r.currentPlayerIndex].name}`; io.to(roomName).emit('statusMsg', msg); io.to(roomName).emit('turnUpdate', { playerId: r.players[r.currentPlayerIndex].id, phase: r.gameState, roundCards: r.roundCardsCount }); handleBotTurn(roomName);}
 
 server.listen(PORT, () => console.log(`SERVER PORT ${PORT}`));
