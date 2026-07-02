@@ -14,6 +14,34 @@ const io = new Server(server, {
 const path = require('path');
 const PORT = process.env.PORT || 3000;
 
+const tf = require('@tensorflow/tfjs');
+const fs = require('fs');
+
+let botBrain = null;
+
+// Funzione per caricare il cervello del bot all'avvio del server
+async function loadBotBrain() {
+    try {
+        if (!fs.existsSync('./bot_brain/model.json')) return;
+        
+        // Leggiamo i file generati dall'addestramento
+        const modelJSON = JSON.parse(fs.readFileSync('./bot_brain/model.json', 'utf8'));
+        const weightBuffer = fs.readFileSync('./bot_brain/weights.bin');
+        const weightData = new Uint8Array(weightBuffer).buffer;
+
+        // Montiamo il cervello nella RAM
+        botBrain = await tf.loadLayersModel(tf.io.fromMemory(
+            modelJSON.modelTopology,
+            modelJSON.weightsManifest[0].weights,
+            weightData
+        ));
+        console.log("🧠 CERVELLO IA CARICATO! I bot useranno la rete neurale.");
+    } catch (e) {
+        console.log("⚠️ Errore caricamento IA. I bot useranno la logica base.", e.message);
+    }
+}
+loadBotBrain();
+
 app.use(express.static(__dirname));
 app.use('/carte', express.static(path.join(__dirname, 'carte')));
 app.use('/sticker', express.static(path.join(__dirname, 'sticker')));
@@ -53,6 +81,21 @@ function getCardPower(c, isAssoHigh) {
   if (c.suit === 'denari' && c.value === 1) return isAssoHigh ? 9999 : -1;
   let p = c.suit === 'denari' ? 400 : c.suit === 'coppe' ? 300 : c.suit === 'spade' ? 200 : 100;
   return p + c.value;
+}
+
+function getCardGlobalIndex(card) {
+    const suitOffset = SUITS.indexOf(card.suit) * 10;
+    return suitOffset + (card.value - 1);
+}
+
+function getStateVector(hand, tableCards, tricksWon, bid, playersLeftToPlay, maxCards) {
+    const vector = new Array(83).fill(0);
+    hand.forEach(c => { vector[getCardGlobalIndex(c)] = 1; });
+    tableCards.forEach(tc => { vector[40 + getCardGlobalIndex(tc.card)] = 1; });
+    vector[80] = tricksWon / maxCards;
+    vector[81] = bid / maxCards;
+    vector[82] = playersLeftToPlay / 4; // Normalizzato su 4 giocatori
+    return vector;
 }
 
 function getNextAliveIndex(curr, players) {
@@ -506,88 +549,50 @@ function handleBotTurn(roomName) {
         // ==========================================
         // 2. STRATEGIA DI GIOCO (PLAYING)
         // ==========================================
-        } else if (room.gameState === "PLAYING") {
+} else if (room.gameState === "PLAYING") {
             if (p.hand.length === 0) return;
-            
-            let wantsToWin = (p.tricksWon < p.bid);
-            
-            // Variabile fondamentale: quanti devono ancora giocare dopo di me?
-            let playersLeft = activePlayers.length - room.tableCards.length - 1;
-
-            let maxCurrentPower = -9999;
-            room.tableCards.forEach(tc => {
-                let power = getCardPower(tc.card, tc.isAssoHigh);
-                if (power > maxCurrentPower) maxCurrentPower = power;
-            });
-
-            let handPowers = p.hand.map((c, idx) => {
-                if (c.suit === 'denari' && c.value === 1) {
-                    return { index: idx, card: c, powerHigh: getCardPower(c, true), powerLow: getCardPower(c, false) };
-                } else {
-                    let pwr = getCardPower(c, false);
-                    return { index: idx, card: c, powerHigh: pwr, powerLow: pwr };
-                }
-            });
 
             let chosenCardIndex = 0;
             let choiceIsAssoHigh = false;
+            let wantsToWin = (p.tricksWon < p.bid);
 
-            if (wantsToWin) {
-                // OBIETTIVO: VINCERE LA PRESA
-                let winningChoices = handPowers.filter(hp => {
-                    let pwr = (hp.card.suit === 'denari' && hp.card.value === 1) ? hp.powerHigh : hp.powerLow;
-                    return pwr > maxCurrentPower;
+            // ==========================================
+            // SE IL CERVELLO IA È ATTIVO, USA LA RETE NEURALE
+            // ==========================================
+            if (botBrain) {
+                let playersLeft = activePlayers.length - room.tableCards.length - 1;
+                
+                // 1. Traduciamo il tavolo in numeri
+                const stateVector = getStateVector(p.hand, room.tableCards, p.tricksWon, p.bid, playersLeft, room.roundCardsCount);
+                const stateTensor = tf.tensor2d([stateVector]);
+                
+                // 2. Chiediamo al cervello di calcolare i punteggi per ogni carta
+                const qValues = botBrain.predict(stateTensor).dataSync();
+                stateTensor.dispose(); // Svuota la memoria dopo l'uso
+                
+                // 3. Il bot guarda la sua mano e sceglie la carta a cui l'IA ha dato il punteggio più alto
+                let maxQ = -Infinity;
+                p.hand.forEach((card, idx) => {
+                    const globalIdx = getCardGlobalIndex(card);
+                    if (qValues[globalIdx] > maxQ) { 
+                        maxQ = qValues[globalIdx]; 
+                        chosenCardIndex = idx; 
+                    }
                 });
 
-                if (winningChoices.length > 0) {
-                    if (playersLeft === 0) {
-                        // Sono l'ultimo a giocare! Prendo "al risparmio" usando la carta vincente più debole.
-                        winningChoices.sort((a, b) => {
-                            let pA = (a.card.suit === 'denari' && a.card.value === 1) ? a.powerHigh : a.powerLow;
-                            let pB = (b.card.suit === 'denari' && b.card.value === 1) ? b.powerHigh : b.powerLow;
-                            return pA - pB; 
-                        });
-                    } else {
-                        // Ci sono altri dopo di me. Scarico la ZAVORRA (gioco la più forte in assoluto)
-                        // per assicurarmi la presa e togliermi dai guai i carichi pesanti.
-                        winningChoices.sort((a, b) => {
-                            let pA = (a.card.suit === 'denari' && a.card.value === 1) ? a.powerHigh : a.powerLow;
-                            let pB = (b.card.suit === 'denari' && b.card.value === 1) ? b.powerHigh : b.powerLow;
-                            return pB - pA; 
-                        });
-                    }
-
-                    chosenCardIndex = winningChoices[0].index;
-                    if (winningChoices[0].card.suit === 'denari' && winningChoices[0].card.value === 1) choiceIsAssoHigh = true;
-
-                } else {
-                    // Non ho carte per superare il tavolo. Scarto la carta PIÙ BASSA in assoluto.
-                    handPowers.sort((a, b) => a.powerLow - b.powerLow);
-                    chosenCardIndex = handPowers[0].index;
-                    if (handPowers[0].card.suit === 'denari' && handPowers[0].card.value === 1) choiceIsAssoHigh = false;
+                // Gestione euristica dell'asso di denari (l'unica cosa rimasta "fissa")
+                const chosenCardObj = p.hand[chosenCardIndex];
+                if (chosenCardObj.suit === 'denari' && chosenCardObj.value === 1) {
+                    choiceIsAssoHigh = wantsToWin;
                 }
 
             } else {
-                // OBIETTIVO: NON VINCERE (HO GIÀ FATTO LE MIE PRESE)
-                let losingChoices = handPowers.filter(hp => {
-                    let pwr = (hp.card.suit === 'denari' && hp.card.value === 1) ? hp.powerLow : hp.powerLow;
-                    return pwr < maxCurrentPower;
-                });
-
-                if (losingChoices.length > 0) {
-                    // Posso perdere. Gioco la carta PIÙ ALTA tra quelle perdenti per smaltire carte pericolose!
-                    losingChoices.sort((a, b) => b.powerLow - a.powerLow);
-                    chosenCardIndex = losingChoices[0].index;
-                    if (losingChoices[0].card.suit === 'denari' && losingChoices[0].card.value === 1) choiceIsAssoHigh = false;
-                } else {
-                    // Tragedia: tutte le mie carte superano il tavolo.
-                    // Gioco la carta PIÙ BASSA in assoluto sperando che qualcuno dopo di me mi superi.
-                    handPowers.sort((a, b) => a.powerLow - b.powerLow);
-                    chosenCardIndex = handPowers[0].index;
-                    if (handPowers[0].card.suit === 'denari' && handPowers[0].card.value === 1) choiceIsAssoHigh = false; // Se è l'asso, lo chiamo Basso!
-                }
+                // ... (Se l'IA fallisce per qualche motivo, qui puoi lasciare o omettere 
+                // la vecchia logica che avevamo scritto, ma per ora il botBrain ci sarà sempre)
+                chosenCardIndex = Math.floor(Math.random() * p.hand.length);
             }
 
+            // Esecuzione fisica della mossa del bot
             const c = p.hand[chosenCardIndex];
             p.hand.splice(chosenCardIndex, 1);
 
