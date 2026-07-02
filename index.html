@@ -221,7 +221,13 @@
                 <input type="checkbox" id="opt-blind" style="width:20px; margin:0;"> 
                 <span>Modalità Cieca (1 Carta)</span>
             </label>
-            <button onclick="addBot()" style="margin-top:10px; background:#2b3990; color:white; border: 1px solid #4444ff;">AGGIUNGI BOT 🤖</button>
+            <div style="display:flex; align-items:center; justify-content:space-between; background:#222; padding:8px 12px; border-radius:5px; margin-top:10px; border: 1px solid #444;">
+                <span style="color:#ccc; font-weight:bold; font-size: 14px;">AGGIUNGI BOT 🤖</span>
+                <div style="display:flex; gap:10px;">
+                <button onclick="removeBot()" style="width:35px; height:35px; padding:0; background:#661111; color:white; border-radius:5px; border:1px solid #ff4444; font-size:20px;">-</button>
+                <button onclick="addBot()" style="width:35px; height:35px; padding:0; background:#116611; color:white; border-radius:5px; border:1px solid #44ff44; font-size:20px;">+</button>
+            </div>
+        </div>
             <button onclick="start()" style="margin-top:15px;">INIZIA PARTITA</button>
         </div>
         <div id="waiting-msg" style="color:#888; font-size:12px; margin-top:10px;">In attesa dell'Host...</div>
@@ -309,9 +315,8 @@
             document.getElementById('sticker-menu').style.display = 'none'; // Chiudi il menu
         }
         // -------------------------
-        function addBot() {
-        socket.emit('addBot');
-        }
+        function addBot() { socket.emit('addBot'); }
+        function removeBot() { socket.emit('removeBot'); }
 
         socket.on('connect', () => { 
             myId = socket.id; 
