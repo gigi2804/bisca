@@ -61,7 +61,7 @@ const SUITS = ['denari', 'coppe', 'spade', 'bastoni'];
 
 function createRoomState() {
     return {
-        players: [], deck: [], tableCards: [],
+        players: [], deck: [], tableCards: [], playedCardsHistory: [],
         gameState: "LOBBY",
         roundCardsCount: 5,
         currentPlayerIndex: 0, dealerIndex: 0, firstPlayerIndex: 0,
@@ -585,7 +585,7 @@ function handleBotTurn(roomName) {
                 let playersLeft = activePlayers.length - room.tableCards.length - 1;
                 
                 // 1. Traduciamo il tavolo in numeri
-                const stateVector = getStateVector(p.hand, room.tableCards, p.tricksWon, p.bid, playersLeft, room.roundCardsCount);
+                const stateVector = getStateVector(p.hand, room.tableCards, p.tricksWon, p.bid, playersLeft, room.roundCardsCount, room.playedCardsHistory);
                 const stateTensor = tf.tensor2d([stateVector]);
                 
                 // 2. Chiediamo al cervello di calcolare i punteggi per ogni carta
@@ -663,7 +663,7 @@ function broadcastUpdate(roomName) {
 }
 function startRound(roomName) {
   const room = rooms[roomName];
-  room.deck = shuffle(createDeck()); room.tableCards = []; room.isProcessing = false;
+  room.deck = shuffle(createDeck()); room.tableCards = []; room.playedCardsHistory = []; room.isProcessing = false;
   room.players.forEach(p => { 
       p.bid = null; 
       p.tricksWon = 0; 
@@ -713,6 +713,7 @@ function evaluateTrick(roomName) {
             if(r.gameState === "LOBBY") return;
             if(wPlayer) wPlayer.tricksWon++;
             broadcastUpdate(roomName);
+            r.tableCards.forEach(tc => r.playedCardsHistory.push(tc.card));
             r.tableCards = []; io.to(roomName).emit('tableUpdate', []); io.to(roomName).emit('clearBlindCards'); 
             let nextIdx = r.players.findIndex(p => p.id === winner.playerId);
             if (nextIdx === -1) nextIdx = getNextAliveIndex(0, r.players);
