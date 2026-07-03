@@ -502,7 +502,7 @@ function handleBotTurn(roomName) {
         // ==========================================
         // 1. STRATEGIA DI SCOMMESSA (BIDDING)
         // ==========================================
-if (room.gameState === "BIDDING") {
+        if (room.gameState === "BIDDING") {
             // Capiamo se è un turno cieco (devi assicurarti che la stanza abbia questa impostazione salvata, es. room.isBlind)
             const isBlindRound = (room.roundCardsCount === 1 && room.isBlind === true);
             
@@ -544,6 +544,7 @@ if (room.gameState === "BIDDING") {
             }
 
             io.to(roomName).emit('playerBid', { playerId: p.id, bid: p.bid });
+            io.to(roomName).emit('gameStateUpdate', room);
             nextTurn(roomName, 'BIDDING');
 
         // ==========================================
