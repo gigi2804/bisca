@@ -17,28 +17,34 @@ const PORT = process.env.PORT || 3000;
 const tf = require('@tensorflow/tfjs');
 const fs = require('fs');
 
-let botBrain = null;
+let botBrain = null;      // Cervello per le carte
+let botBrainBid = null;   // Cervello per le scommesse
 
-// Funzione per caricare il cervello del bot all'avvio del server
+// Funzione per caricare ENTRAMBI i cervelli all'avvio
 async function loadBotBrain() {
+    // 1. Carica il cervello del Gioco (Playing)
     try {
-        if (!fs.existsSync('./bot_brain/model.json')) return;
-        
-        // Leggiamo i file generati dall'addestramento
-        const modelJSON = JSON.parse(fs.readFileSync('./bot_brain/model.json', 'utf8'));
-        const weightBuffer = fs.readFileSync('./bot_brain/weights.bin');
-        const weightData = new Uint8Array(weightBuffer).buffer;
+        if (fs.existsSync('./bot_brain/model.json')) {
+            const modelJSON = JSON.parse(fs.readFileSync('./bot_brain/model.json', 'utf8'));
+            const weightBuffer = fs.readFileSync('./bot_brain/weights.bin');
+            botBrain = await tf.loadLayersModel(tf.io.fromMemory(
+                modelJSON.modelTopology, modelJSON.weightsManifest[0].weights, new Uint8Array(weightBuffer).buffer
+            ));
+            console.log("🧠 Cervello CARTE caricato!");
+        }
+    } catch (e) { console.log("⚠️ Errore caricamento IA Carte.", e.message); }
 
-        // Montiamo il cervello nella RAM
-        botBrain = await tf.loadLayersModel(tf.io.fromMemory(
-            modelJSON.modelTopology,
-            modelJSON.weightsManifest[0].weights,
-            weightData
-        ));
-        console.log("🧠 CERVELLO IA CARICATO! I bot useranno la rete neurale.");
-    } catch (e) {
-        console.log("⚠️ Errore caricamento IA. I bot useranno la logica base.", e.message);
-    }
+    // 2. Carica il cervello delle Scommesse (Bidding)
+    try {
+        if (fs.existsSync('./bot_brain_bid/model.json')) {
+            const bidJSON = JSON.parse(fs.readFileSync('./bot_brain_bid/model.json', 'utf8'));
+            const bidWeight = fs.readFileSync('./bot_brain_bid/weights.bin');
+            botBrainBid = await tf.loadLayersModel(tf.io.fromMemory(
+                bidJSON.modelTopology, bidJSON.weightsManifest[0].weights, new Uint8Array(bidWeight).buffer
+            ));
+            console.log("🔮 Cervello SCOMMESSE caricato!");
+        }
+    } catch (e) { console.log("⚠️ Errore caricamento IA Scommesse.", e.message); }
 }
 loadBotBrain();
 
@@ -95,6 +101,14 @@ function getStateVector(hand, tableCards, tricksWon, bid, playersLeftToPlay, max
     vector[80] = tricksWon / maxCards;
     vector[81] = bid / maxCards;
     vector[82] = playersLeftToPlay / 4; // Normalizzato su 4 giocatori
+    return vector;
+}
+
+function getBidStateVector(hand, maxCards, isBlind) {
+    const vector = new Array(42).fill(0);
+    hand.forEach(c => { vector[getCardGlobalIndex(c)] = 1; });
+    vector[40] = maxCards / 5;
+    vector[41] = isBlind ? 1.0 : 0.0;
     return vector;
 }
 
@@ -488,62 +502,48 @@ function handleBotTurn(roomName) {
         // ==========================================
         // 1. STRATEGIA DI SCOMMESSA (BIDDING)
         // ==========================================
-        if (room.gameState === "BIDDING") {
-            let estimatedTricks = 0;
+if (room.gameState === "BIDDING") {
+            // Capiamo se è un turno cieco (devi assicurarti che la stanza abbia questa impostazione salvata, es. room.isBlind)
+            const isBlindRound = (room.roundCardsCount === 1 && room.isBlind === true);
             
-            // Valuta la forza base della mano
-            p.hand.forEach(c => {
-                if (c.suit === 'denari') {
-                    if (c.value === 1 || c.value >= 8) estimatedTricks += 1.0;
-                    else if (c.value >= 5) estimatedTricks += 0.5;
-                } else if (c.suit === 'coppe') {
-                    if (c.value >= 9) estimatedTricks += 0.8;
-                    else if (c.value >= 7) estimatedTricks += 0.3;
-                } else {
-                    if (c.value === 10) estimatedTricks += 0.7;
-                    else if (c.value >= 9) estimatedTricks += 0.2;
-                }
-            });
-            
-            let targetBid = Math.round(estimatedTricks);
-
-            // Analisi delle dichiarazioni degli avversari (Lettura del tavolo)
-            let bidsSoFar = 0;
-            let playersBidSoFar = 0;
-            activePlayers.forEach(x => {
-                if (x.bid !== null) {
-                    bidsSoFar += x.bid;
-                    playersBidSoFar++;
-                }
-            });
-
-            // Se il bot non è il primo a parlare, adatta la sua scommessa al tavolo
-            if (playersBidSoFar > 0) {
-                let averageBidExpected = (maxBid / activePlayers.length) * playersBidSoFar;
+            if (botBrainBid) {
+                let visibleCards = [];
                 
-                // Se gli altri stanno chiamando troppe prese, il tavolo è "caldo": abbassa le pretese
-                if (bidsSoFar > averageBidExpected + 1 && targetBid > 0) {
-                    targetBid -= 1;
-                } 
-                // Se gli altri stanno schivando, il tavolo è "freddo": sarai costretto a prendere
-                else if (bidsSoFar < averageBidExpected - 1 && targetBid < maxBid) {
-                    targetBid += 1;
+                if (isBlindRound) {
+                    // Turno Cieco: guarda la fronte degli altri giocatori attivi nella stanza
+                    room.players.forEach(otherP => {
+                        if (otherP.id !== p.id && otherP.connected) {
+                            visibleCards.push(otherP.hand[0]);
+                        }
+                    });
+                } else {
+                    // Turno Normale: guarda le sue carte
+                    visibleCards = p.hand;
                 }
+
+                // Chiediamo all'IA di valutare la scommessa
+                const bidState = getBidStateVector(visibleCards, room.roundCardsCount, isBlindRound);
+                const stateTensor = tf.tensor2d([bidState]);
+                const qValues = botBrainBid.predict(stateTensor).dataSync();
+                stateTensor.dispose(); // Svuota la memoria
+                
+                // Il bot sceglie il numero col punteggio più alto (senza superare il max di carte del round)
+                let maxQ = -Infinity;
+                let bestBid = 0;
+                for (let b = 0; b <= room.roundCardsCount; b++) {
+                    if (qValues[b] > maxQ) { 
+                        maxQ = qValues[b]; 
+                        bestBid = b; 
+                    }
+                }
+                p.bid = bestBid;
+
+            } else {
+                // Fallback di sicurezza: se l'IA non si carica, scommette a caso
+                p.bid = Math.floor(Math.random() * (room.roundCardsCount + 1));
             }
 
-            if (targetBid > maxBid) targetBid = maxBid;
-
-            // Regola del Mazziere: deve per forza deviare se la somma combacia
-            if (room.currentPlayerIndex === room.dealerIndex) {
-                if (bidsSoFar + targetBid === maxBid) {
-                    if (targetBid === 0) targetBid = 1;
-                    else if (targetBid === maxBid) targetBid = maxBid - 1;
-                    else targetBid = (estimatedTricks > targetBid) ? targetBid + 1 : targetBid - 1;
-                }
-            }
-            
-            p.bid = targetBid;
-            broadcastUpdate(roomName);
+            io.to(roomName).emit('playerBid', { playerId: p.id, bid: p.bid });
             nextTurn(roomName, 'BIDDING');
 
         // ==========================================
