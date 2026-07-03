@@ -527,24 +527,46 @@ function handleBotTurn(roomName) {
                 const qValues = botBrainBid.predict(stateTensor).dataSync();
                 stateTensor.dispose(); // Svuota la memoria
                 
-                // Il bot sceglie il numero col punteggio più alto (senza superare il max di carte del round)
-                let maxQ = -Infinity;
-                let bestBid = 0;
+                // --- REGOLA DEL MAZZIERE (Anti-Pareggio) ---
+                let currentBidsSum = 0;
+                let missingBids = 0;
+                room.players.forEach(player => {
+                    if (player.lives > 0) { // Contiamo solo i vivi!
+                        if (player.bid !== null) currentBidsSum += player.bid;
+                        else missingBids++;
+                    }
+                });
+
+                let forbiddenBid = -1;
+                // Se manca solo 1 scommessa, il bot è l'ultimo a parlare (Mazziere)
+                if (missingBids === 1) { 
+                    forbiddenBid = room.roundCardsCount - currentBidsSum;
+                }
+
+                // Il bot sceglie il numero migliore SCARTANDO quello vietato
+                let bestBids = [];
                 for (let b = 0; b <= room.roundCardsCount; b++) {
-                    if (qValues[b] > maxQ) { 
-                        maxQ = qValues[b]; 
-                        bestBid = b; 
+                    if (b !== forbiddenBid) {
+                        bestBids.push({ bid: b, score: qValues[b] });
                     }
                 }
-                p.bid = bestBid;
+                // Ordina dalla scommessa più voluta a quella meno voluta
+                bestBids.sort((a, b) => b.score - a.score);
+                p.bid = bestBids[0].bid;
 
             } else {
-                // Fallback di sicurezza: se l'IA non si carica, scommette a caso
-                p.bid = Math.floor(Math.random() * (room.roundCardsCount + 1));
+                // Fallback di sicurezza (con regola del mazziere)
+                let validRandoms = [];
+                for (let b = 0; b <= room.roundCardsCount; b++) {
+                    if (b !== room.roundCardsCount - room.players.reduce((s, pl) => s + (pl.bid || 0), 0)) {
+                        validRandoms.push(b);
+                    }
+                }
+                p.bid = validRandoms[Math.floor(Math.random() * validRandoms.length)];
             }
 
-            io.to(roomName).emit('playerBid', { playerId: p.id, bid: p.bid });
-            io.to(roomName).emit('gameStateUpdate', room);
+            // AGGIORNAMENTO GRAFICO IMMEDIATO DELLE SCOMMESSE!
+            broadcastUpdate(roomName); 
             nextTurn(roomName, 'BIDDING');
 
         // ==========================================
