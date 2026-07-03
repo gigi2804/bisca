@@ -94,21 +94,24 @@ function getCardGlobalIndex(card) {
     return suitOffset + (card.value - 1);
 }
 
-function getStateVector(hand, tableCards, tricksWon, bid, playersLeftToPlay, maxCards) {
-    const vector = new Array(83).fill(0);
+function getStateVector(hand, tableCards, tricksWon, bid, playersLeftToPlay, maxCards, playedCardsHistory) {
+    const vector = new Array(123).fill(0);
     hand.forEach(c => { vector[getCardGlobalIndex(c)] = 1; });
     tableCards.forEach(tc => { vector[40 + getCardGlobalIndex(tc.card)] = 1; });
-    vector[80] = tricksWon / maxCards;
-    vector[81] = bid / maxCards;
-    vector[82] = playersLeftToPlay / 4; // Normalizzato su 4 giocatori
+    playedCardsHistory.forEach(c => { vector[80 + getCardGlobalIndex(c)] = 1; });
+    vector[120] = tricksWon / maxCards;
+    vector[121] = bid / maxCards;
+    vector[122] = playersLeftToPlay / 4; // Normalizzato su 4 giocatori
     return vector;
 }
 
-function getBidStateVector(hand, maxCards, isBlind) {
-    const vector = new Array(42).fill(0);
+function getBidStateVector(hand, maxCards, isBlind, currentBidsSum, playersAlreadyBid) {
+    const vector = new Array(44).fill(0);
     hand.forEach(c => { vector[getCardGlobalIndex(c)] = 1; });
     vector[40] = maxCards / 5;
     vector[41] = isBlind ? 1.0 : 0.0;
+    vector[42] = currentBidsSum / maxCards;
+    vector[43] = playersAlreadyBid / 4;
     return vector;
 }
 
@@ -508,49 +511,45 @@ function handleBotTurn(roomName) {
             
             if (botBrainBid) {
                 let visibleCards = [];
-                
                 if (isBlindRound) {
-                    // Turno Cieco: guarda la fronte degli altri giocatori attivi nella stanza
                     room.players.forEach(otherP => {
-                        if (otherP.id !== p.id && otherP.connected) {
-                            visibleCards.push(otherP.hand[0]);
-                        }
+                        if (otherP.id !== p.id && otherP.connected) visibleCards.push(otherP.hand[0]);
                     });
-                } else {
-                    // Turno Normale: guarda le sue carte
-                    visibleCards = p.hand;
-                }
+                } else { visibleCards = p.hand; }
 
-                // Chiediamo all'IA di valutare la scommessa
-                const bidState = getBidStateVector(visibleCards, room.roundCardsCount, isBlindRound);
-                const stateTensor = tf.tensor2d([bidState]);
-                const qValues = botBrainBid.predict(stateTensor).dataSync();
-                stateTensor.dispose(); // Svuota la memoria
-                
-                // --- REGOLA DEL MAZZIERE (Anti-Pareggio) ---
+                // --- REGOLA DEL MAZZIERE (Anti-Pareggio) & CALCOLO DATI TAVOLO ---
                 let currentBidsSum = 0;
+                let playersAlreadyBid = 0; // NUOVO CONTATORE
                 let missingBids = 0;
+                
                 room.players.forEach(player => {
-                    if (player.lives > 0) { // Contiamo solo i vivi!
-                        if (player.bid !== null) currentBidsSum += player.bid;
-                        else missingBids++;
+                    if (player.lives > 0) { 
+                        if (player.bid !== null) {
+                            currentBidsSum += player.bid;
+                            playersAlreadyBid++;
+                        } else {
+                            missingBids++;
+                        }
                     }
                 });
 
+                // Passiamo le "Orecchie" alla rete neurale!
+                const bidState = getBidStateVector(visibleCards, room.roundCardsCount, isBlindRound, currentBidsSum, playersAlreadyBid);
+                const stateTensor = tf.tensor2d([bidState]);
+                const qValues = botBrainBid.predict(stateTensor).dataSync();
+                stateTensor.dispose(); 
+                
                 let forbiddenBid = -1;
-                // Se manca solo 1 scommessa, il bot è l'ultimo a parlare (Mazziere)
                 if (missingBids === 1) { 
                     forbiddenBid = room.roundCardsCount - currentBidsSum;
                 }
 
-                // Il bot sceglie il numero migliore SCARTANDO quello vietato
                 let bestBids = [];
                 for (let b = 0; b <= room.roundCardsCount; b++) {
                     if (b !== forbiddenBid) {
                         bestBids.push({ bid: b, score: qValues[b] });
                     }
                 }
-                // Ordina dalla scommessa più voluta a quella meno voluta
                 bestBids.sort((a, b) => b.score - a.score);
                 p.bid = bestBids[0].bid;
 
