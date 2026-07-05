@@ -95,7 +95,7 @@ function getCardGlobalIndex(card) {
 }
 
 function getStateVector(hand, tableCards, tricksWon, bid, playersLeftToPlay, maxCards, playedCardsHistory, currentMaxPower) {
-    const vector = new Array(124).fill(0);
+    const vector = new Array(125).fill(0);
     hand.forEach(c => { vector[getCardGlobalIndex(c)] = 1; });
     tableCards.forEach(tc => { vector[40 + getCardGlobalIndex(tc.card)] = 1; });
     playedCardsHistory.forEach(c => { vector[80 + getCardGlobalIndex(c)] = 1; });
@@ -103,6 +103,7 @@ function getStateVector(hand, tableCards, tricksWon, bid, playersLeftToPlay, max
     vector[121] = bid / maxCards;
     vector[122] = playersLeftToPlay / 8; // Normalizzato su 4 giocatori
     vector[123] = Math.min(Math.max(currentMaxPower, 0) / 500, 1.0);
+    vector[124] = (currentBidsSum - maxCards) / maxCards;
     return vector;
 }
 
@@ -590,9 +591,15 @@ function handleBotTurn(roomName) {
                     let pwr = getCardPower(tc.card, tc.isAssoHigh);
                     if (pwr > currentMaxPower) currentMaxPower = pwr;
                 });
+
+                // NUOVO: Il server conta le scommesse globali per la Tensione
+                let currentBidsSum = 0;
+                room.players.forEach(pl => { 
+                    if (pl.lives > 0 && pl.bid !== null) currentBidsSum += pl.bid; 
+                });
                 
                 // 1. Traduciamo il tavolo in numeri
-                const stateVector = getStateVector(p.hand, room.tableCards, p.tricksWon, p.bid, playersLeft, room.roundCardsCount, room.playedCardsHistory, currentMaxPower);
+                const stateVector = getStateVector(p.hand, room.tableCards, p.tricksWon, p.bid, playersLeft, room.roundCardsCount, room.playedCardsHistory, currentMaxPower, currentBidsSum);
                 const stateTensor = tf.tensor2d([stateVector]);
                 
                 // 2. Chiediamo al cervello di calcolare i punteggi per ogni carta
