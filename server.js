@@ -94,7 +94,7 @@ function getCardGlobalIndex(card) {
     return suitOffset + (card.value - 1);
 }
 
-function getStateVector(hand, tableCards, tricksWon, bid, playersLeftToPlay, maxCards, playedCardsHistory, currentMaxPower) {
+function getStateVector(hand, tableCards, tricksWon, bid, playersLeftToPlay, maxCards, playedCardsHistory, currentMaxPower, currentBidsSum) {
     const vector = new Array(125).fill(0);
     hand.forEach(c => { vector[getCardGlobalIndex(c)] = 1; });
     tableCards.forEach(tc => { vector[40 + getCardGlobalIndex(tc.card)] = 1; });
