@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Bisca Pro</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#d4af37">
+    <link rel="apple-touch-icon" href="/icon.png">
     <style>
         :root { --table-color: #0d5226; --table-border: #3d2b1f; --card-width: 60px; --card-height: 96px; --avatar-size: 45px; }
         @media (max-width: 768px) { :root { --card-width: 35px; --card-height: 56px; --avatar-size: 28px; } }
@@ -687,5 +690,16 @@
     </script>
         <script data-goatcounter="https://bisca.goatcounter.com/count"
         async src="//gc.zgo.at/count.js"></script>
+
+    <script>
+        // Registra il Service Worker per permettere l'installazione PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                .then(reg => console.log('Service Worker registrato!', reg))
+                .catch(err => console.log('Errore Service Worker:', err));
+            });
+        }
+    </script>
 </body>
 </html>
