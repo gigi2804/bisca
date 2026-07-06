@@ -272,19 +272,50 @@ socket.on('removeBot', () => {
     }
 }
 
-  socket.on('voteRestart', () => {
-      const roomName = socket.roomName; if (!roomName || !rooms[roomName]) return;
-      const room = rooms[roomName]; const p = room.players.find(x => x.id === socket.id);
-      if (!p || p.isSpectator) return; if (room.restartVotes.has(socket.id)) return; 
+socket.on('voteRestart', () => {
+      const roomName = socket.roomName; 
+      if (!roomName || !rooms[roomName]) return;
+      
+      const room = rooms[roomName]; 
+      const p = room.players.find(x => x.id === socket.id);
+      
+      // Assicuriamoci di ignorare eventuali chiamate da spettatori (o bot, per sicurezza)
+      if (!p || p.isSpectator || p.isBot) return; 
+      if (room.restartVotes.has(socket.id)) return; 
+      
       room.restartVotes.add(socket.id);
-      const activePlayersCount = room.players.filter(pl => !pl.isSpectator).length;
+      
+      // NOVITÀ: Contiamo ESCLUSIVAMENTE i giocatori reali filtrando via i bot
+      const humanActivePlayersCount = room.players.filter(pl => !pl.isSpectator && !pl.isBot).length;
       const votes = room.restartVotes.size;
-      io.to(roomName).emit('chatMessage', { name: "SISTEMA", text: `🔄 <b>${p.name}</b> vota Reset (${votes}/${activePlayersCount})`, id: "SYS" });
+      
+      // Aggiorniamo il messaggio per mostrare il contatore basato solo sugli umani
+      io.to(roomName).emit('chatMessage', { 
+          name: "SISTEMA", 
+          text: `🔄 <b>${p.name}</b> vota Reset (${votes}/${humanActivePlayersCount})`, 
+          id: "SYS" 
+      });
+      
       if (room.restartVotes.size === 1) {
           if(room.voteTimer) clearTimeout(room.voteTimer);
-          room.voteTimer = setTimeout(() => { if(rooms[roomName]) { rooms[roomName].restartVotes.clear(); rooms[roomName].voteTimer = null; io.to(roomName).emit('chatMessage', { name: "SISTEMA", text: "❌ Tempo voto scaduto.", id: "SYS" }); } }, 30000); 
+          room.voteTimer = setTimeout(() => { 
+              if(rooms[roomName]) { 
+                  rooms[roomName].restartVotes.clear(); 
+                  rooms[roomName].voteTimer = null; 
+                  io.to(roomName).emit('chatMessage', { name: "SISTEMA", text: "❌ Tempo voto scaduto.", id: "SYS" }); 
+              } 
+          }, 30000); 
       }
-      if (votes >= activePlayersCount) { if(room.voteTimer) { clearTimeout(room.voteTimer); room.voteTimer = null; } io.to(roomName).emit('statusMsg', `✅ RESET APPROVATO!`); setTimeout(() => resetGame(roomName), 1500); }
+      
+      // Approviamo il reset se i voti eguagliano i giocatori umani attivi
+      if (votes >= humanActivePlayersCount) { 
+          if(room.voteTimer) { 
+              clearTimeout(room.voteTimer); 
+              room.voteTimer = null; 
+          } 
+          io.to(roomName).emit('statusMsg', `✅ RESET APPROVATO!`); 
+          setTimeout(() => resetGame(roomName), 1500); 
+      }
   });
 
   socket.on('leaveGame', (data) => {
