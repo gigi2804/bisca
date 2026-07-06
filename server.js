@@ -107,13 +107,14 @@ function getStateVector(hand, tableCards, tricksWon, bid, playersLeftToPlay, max
     return vector;
 }
 
-function getBidStateVector(hand, maxCards, isBlind, currentBidsSum, playersAlreadyBid) {
-    const vector = new Array(44).fill(0);
+function getBidStateVector(hand, maxCards, isBlind, currentBidsSum, playersAlreadyBid, totalPlayers) {
+    const vector = new Array(45).fill(0);
     hand.forEach(c => { vector[getCardGlobalIndex(c)] = 1; });
     vector[40] = maxCards / 5;
     vector[41] = isBlind ? 1.0 : 0.0;
     vector[42] = currentBidsSum / maxCards;
     vector[43] = playersAlreadyBid / 8;
+    vector[44] = totalPlayers / 8;
     return vector;
 }
 
@@ -523,6 +524,8 @@ function handleBotTurn(roomName) {
                 let currentBidsSum = 0;
                 let playersAlreadyBid = 0; // NUOVO CONTATORE
                 let missingBids = 0;
+
+                let totalActivePlayers = room.players.filter(p => p.lives > 0).length;
                 
                 room.players.forEach(player => {
                     if (player.lives > 0) { 
@@ -536,7 +539,7 @@ function handleBotTurn(roomName) {
                 });
 
                 // Passiamo le "Orecchie" alla rete neurale!
-                const bidState = getBidStateVector(visibleCards, room.roundCardsCount, isBlindRound, currentBidsSum, playersAlreadyBid);
+                const bidState = getBidStateVector(visibleCards, room.roundCardsCount, isBlindRound, currentBidsSum, playersAlreadyBid, totalActivePlayers);
                 const stateTensor = tf.tensor2d([bidState]);
                 const qValues = botBrainBid.predict(stateTensor).dataSync();
                 stateTensor.dispose(); 
